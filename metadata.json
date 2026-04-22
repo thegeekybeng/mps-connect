@@ -1,0 +1,8 @@
+{
+  "name": "AI Powered eMPS Tool",
+  "description": "A digital Meet-The-People Session tool for Singapore Residents and MP Administration, powered by Gemini 2.5 Flash.",
+  "requestFramePermissions": [
+    "microphone",
+    "camera"
+  ]
+}

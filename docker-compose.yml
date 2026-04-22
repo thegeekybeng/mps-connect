@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  mps-connect:
+    # Use standard Node image (No build step = No crashes on NAS)
+    image: node:20-alpine
+    container_name: mps-connect
+    working_dir: /app
+    
+    # Map your NAS folder to the container
+    # IMPORTANT: Ensure '/volume1/docker/mps-connect' matches your actual path
+    volumes:
+      - /volume1/docker/mps-connect:/app
+      - /app/node_modules
+
+    # Install dependencies and run in dev mode
+    command: >
+      sh -c "npm install && npm run dev -- --host"
+
+    # Map port 3080 on NAS to 3000 in container
+    ports:
+      - "3080:3000"
+
+    environment:
+      # PASTE YOUR KEY HERE
+      - API_KEY=YOUR_ACTUAL_GEMINI_API_KEY_HERE
+
+    restart: unless-stopped
