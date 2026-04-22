@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Case, CaseStatus, Urgency, UserRole, CaseNote } from '../types';
-import { generateFormalLetter, explainAIReasoning } from '../services/geminiService';
+import { generateFormalLetter, explainAIReasoning } from '../services/aiService';
 import { ArrowLeft, Wand2, FileText, Info, Clock, ShieldCheck, UserCheck, Send, Plus, X, Target, CheckCircle2, Sparkles, Filter, Calendar, ArrowDownUp, RotateCcw, StickyNote, User, MapPin } from 'lucide-react';
 
 interface CaseDetailProps {

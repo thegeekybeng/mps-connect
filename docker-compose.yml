@@ -10,8 +10,7 @@ services:
     # Map your NAS folder to the container
     # IMPORTANT: Ensure '/volume1/docker/mps-connect' matches your actual path
     volumes:
-      - /volume1/docker/mps-connect:/app
-      - /app/node_modules
+      - /volume1/compose/mps-connect:/app
 
     # Install dependencies and run in dev mode
     command: >
@@ -23,6 +22,7 @@ services:
 
     environment:
       # PASTE YOUR KEY HERE
-      - API_KEY=YOUR_ACTUAL_GEMINI_API_KEY_HERE
+      - OLLAMA_HOST=/ollama-api
+      - OLLAMA_MODEL=gemma4:e2b
 
     restart: unless-stopped

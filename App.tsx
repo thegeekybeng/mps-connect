@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Case, CaseStatus, Urgency, Message, CaseDocument, UserRole } from './types';
 import ResidentView from './components/ResidentView';
 import AdminDashboard from './components/AdminDashboard';
-import { analyzeAndCategorizeCase } from './services/geminiService';
+import { analyzeAndCategorizeCase } from './services/aiService';
 import { User, PenTool, ShieldAlert, Gavel, ChevronRight, Lock, Smartphone, ShieldCheck, Loader2, ScanFace, ArrowRight, MapPin } from 'lucide-react';
 
 // Mock Identities for SingPass Simulation (Staff only)
@@ -377,8 +377,7 @@ export default function App() {
             </p>
             <p className="text-slate-500 text-xs font-medium mb-2">Envisioned by TheGeekyBeng</p>
             <div className="flex items-center justify-center gap-2 text-slate-600 text-xs mt-4">
-                 <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/8a/Google_Gemini_logo.svg/2560px-Google_Gemini_logo.svg.png" className="h-4 opacity-50" alt="Gemini" />
-                 <span>Powered by Gemini 3</span>
+                 <span>Powered by Local AI</span>
             </div>
         </footer>
       </div>
