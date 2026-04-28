@@ -1,7 +1,7 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Message } from '../types';
-import { sendMessage } from '../services/aiService';
-import { Send, Paperclip, Loader2, ShieldCheck, X, FileText, Sparkles, Calendar, CheckCircle2, MapPin } from 'lucide-react';
+import { sendMessage, transcribeAudio, synthesizeSpeech } from '../services/aiService';
+import { Send, Paperclip, Loader2, ShieldCheck, X, FileText, Sparkles, Calendar, CheckCircle2, MapPin, Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
 
 interface ResidentViewProps {
   onCompleteSession: (messages: Message[]) => void;
@@ -50,6 +50,81 @@ const ResidentView: React.FC<ResidentViewProps> = ({
   const [inputText, setInputText] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [file, setFile] = useState<string | null>(null);
+
+  // Voice state
+  const [voiceEnabled, setVoiceEnabled] = useState(false);  // TTS auto-play toggle
+  const [isRecording, setIsRecording] = useState(false);     // microphone active
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef   = useRef<Blob[]>([]);
+  const currentAudioRef  = useRef<HTMLAudioElement | null>(null);
+
+  // ── TTS playback ─────────────────────────────────────────────
+  const playResponse = useCallback(async (text: string) => {
+    if (!voiceEnabled || !text.trim()) return;
+    // Stop any currently playing audio
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      URL.revokeObjectURL(currentAudioRef.current.src);
+      currentAudioRef.current = null;
+    }
+    try {
+      const url = await synthesizeSpeech(text);
+      const audio = new Audio(url);
+      currentAudioRef.current = audio;
+      audio.onended = () => {
+        URL.revokeObjectURL(url);
+        currentAudioRef.current = null;
+      };
+      audio.play();
+    } catch (e) {
+      console.warn('TTS playback failed:', e);
+    }
+  }, [voiceEnabled]);
+
+  // ── STT recording ─────────────────────────────────────────────
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        setIsTranscribing(true);
+        try {
+          const text = await transcribeAudio(blob);
+          if (text) setInputText(prev => (prev.trim() ? prev + ' ' + text : text));
+        } catch (e) {
+          console.warn('STT failed:', e);
+        } finally {
+          setIsTranscribing(false);
+        }
+      };
+      recorder.start();
+      mediaRecorderRef.current = recorder;
+      setIsRecording(true);
+    } catch (e) {
+      console.warn('Microphone access denied:', e);
+    }
+  };
+
+  const stopRecording = () => {
+    mediaRecorderRef.current?.stop();
+    mediaRecorderRef.current = null;
+    setIsRecording(false);
+  };
+
+  // Cleanup audio on unmount
+  useEffect(() => {
+    return () => {
+      if (currentAudioRef.current) {
+        currentAudioRef.current.pause();
+        URL.revokeObjectURL(currentAudioRef.current.src);
+      }
+    };
+  }, []);
 
   // Urgent Booking State
   const [showBookingModal, setShowBookingModal] = useState(false);
@@ -117,6 +192,8 @@ const ResidentView: React.FC<ResidentViewProps> = ({
       };
 
       setMessages(prev => [...prev, botMsg]);
+      // Speak AI response if voice mode is on
+      playResponse(responseText);
     } catch (error) {
       console.error(error);
     } finally {
@@ -157,8 +234,21 @@ const ResidentView: React.FC<ResidentViewProps> = ({
                 </div>
             </div>
         </div>
-        <div className="flex items-center gap-1 bg-red-700 px-3 py-1.5 rounded-full text-xs border border-red-500">
-            <ShieldCheck size={14} /> <span className="hidden sm:inline">Secure</span>
+        <div className="flex items-center gap-2">
+            {/* TTS toggle */}
+            <button
+              id="tts-toggle-btn"
+              onClick={() => setVoiceEnabled(v => !v)}
+              title={voiceEnabled ? 'Voice output ON — click to mute' : 'Voice output OFF — click to enable'}
+              className={`p-1.5 rounded-full transition-colors ${
+                voiceEnabled ? 'bg-white/20 text-white' : 'bg-red-800/50 text-red-300'
+              }`}
+            >
+              {voiceEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
+            </button>
+            <div className="flex items-center gap-1 bg-red-700 px-3 py-1.5 rounded-full text-xs border border-red-500">
+                <ShieldCheck size={14} /> <span className="hidden sm:inline">Secure</span>
+            </div>
         </div>
       </div>
 
@@ -198,10 +288,30 @@ const ResidentView: React.FC<ResidentViewProps> = ({
         )}
 
         <div className="flex items-center gap-2">
+            {/* File attachment */}
             <label className="p-2 hover:bg-gray-100 rounded-full cursor-pointer">
                 <input type="file" accept="image/*,.pdf" className="hidden" onChange={handleFileChange} />
                 <Paperclip size={20} className="text-gray-500" />
             </label>
+            {/* Microphone — STT */}
+            <button
+              id="mic-btn"
+              onMouseDown={startRecording}
+              onMouseUp={stopRecording}
+              onTouchStart={startRecording}
+              onTouchEnd={stopRecording}
+              disabled={isProcessing || isTranscribing}
+              title={isRecording ? 'Release to transcribe' : 'Hold to speak'}
+              className={`p-2 rounded-full transition-all ${
+                isRecording
+                  ? 'bg-red-600 text-white animate-pulse shadow-lg shadow-red-200'
+                  : isTranscribing
+                  ? 'bg-amber-100 text-amber-600 animate-pulse'
+                  : 'hover:bg-gray-100 text-gray-500'
+              }`}
+            >
+              {isTranscribing ? <Loader2 size={20} className="animate-spin" /> : isRecording ? <MicOff size={20} /> : <Mic size={20} />}
+            </button>
 
             <input
                 type="text"

@@ -1,37 +1,77 @@
 // ============================================================
 // AI Service — Local Inference Backend
-// Connects to local Ollama instance via Tailscale
-// All exports use model-agnostic naming.
+// LLM:  Ollama (SEA-LION 27B) via Tailscale → /ollama-api/
+// STT:  Wyoming Whisper (small-int8) via bridge → /ai-speech/transcribe
+// TTS:  Wyoming Piper (hfc_male-medium) via bridge → /ai-speech/synthesize
 // ============================================================
 
 import { Message, Case, CategorizationResult, Urgency } from '../types';
 
-// Use same-origin nginx proxy — browser cannot reach Tailscale IPs directly.
-// nginx routes /ollama-api/ → http://127.0.0.1:11434/
-const OLLAMA_BASE = (process.env.OLLAMA_HOST || '/ollama-api');
-const MODEL = (process.env.OLLAMA_MODEL || 'gemma4:e2b');
+// Nginx proxy base paths — all same-origin, no CORS issues
+const OLLAMA_BASE  = (import.meta.env.VITE_OLLAMA_HOST  || '/ollama-api');
+const SPEECH_BASE  = (import.meta.env.VITE_SPEECH_HOST  || '/ai-speech');
+const MODEL        = (import.meta.env.VITE_OLLAMA_MODEL || 'aisingapore/gemma-sea-lion-v4-27b-it');
 
-// ── Shared system instruction (identical logic to OG) ───────
+// ── STT ──────────────────────────────────────────────────────
+/**
+ * Send a recorded audio Blob to the Wyoming bridge and get back transcribed text.
+ * Browser records via MediaRecorder (webm/opus) — bridge accepts any ffmpeg-compatible format.
+ */
+export const transcribeAudio = async (audioBlob: Blob): Promise<string> => {
+  const form = new FormData();
+  form.append('audio', audioBlob, 'recording.webm');
+
+  const response = await fetch(`${SPEECH_BASE}/transcribe`, {
+    method: 'POST',
+    body: form,
+  });
+
+  if (!response.ok) throw new Error(`STT error: ${response.statusText}`);
+  const data = await response.json();
+  return (data.text || '').trim();
+};
+
+// ── TTS ──────────────────────────────────────────────────────
+/**
+ * Send AI response text to Piper and get back a playable object URL.
+ * Caller is responsible for calling URL.revokeObjectURL() when done.
+ */
+export const synthesizeSpeech = async (text: string): Promise<string> => {
+  const response = await fetch(`${SPEECH_BASE}/synthesize`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+
+  if (!response.ok) throw new Error(`TTS error: ${response.statusText}`);
+  const blob = await response.blob();
+  return URL.createObjectURL(blob);
+};
+
+// ── Shared system instruction ────────────────────────────────
 export const getSystemInstruction = (mpName: string, constituency: string, division?: string) => `
 You are a highly intelligent, multilingual Digital Assistant for ${mpName}, Member of Parliament for ${constituency}${division ? `, ${division} division` : ''}.
 
-**PRIME DIRECTIVE: MULTIMODAL LISTENING & LANGUAGE MIRRORING**
-1. You will receive TEXT messages. The user may write in Singlish, Mandarin, Malay, or Tamil.
-2. **Language Mirroring**:
-   - If user writes Tamil → Reply in Tamil text ONLY.
-   - If user writes Mandarin → Reply in Mandarin text ONLY.
-   - If user writes Malay → Reply in Malay text ONLY.
-   - If user writes Singlish → Reply in Singlish/English.
-3. **NO TRANSLATION**: Show ONLY the user's native language in your reply.
+**PRIME DIRECTIVE: LANGUAGE MIRRORING — NON-NEGOTIABLE**
+Detect what language the resident uses. Reply ONLY in that language.
 
-**URGENCY DETECTION & ACTION**:
-- If the issue is CRITICAL or URGENT (homelessness, imminent eviction within 24 hours, physical danger, no food, suicide risk), you MUST:
-  1. Provide immediate empathetic reassurance.
-  2. APPEND this exact tag at the end of your response: ||URGENT_BOOKING||
+- **Singlish** → Authentic Singlish ONLY. Use: lah, leh, lor, sia, wah, aiyo, hor, can or not, got or not, one, already, faster [verb]. Natural warmth, NOT performed auntie-speak. Good examples: "Come come, I listen you talk." / "Aiyoh, must faster figure out together lah." / "Wah, that one urgent sia." NEVER reply in formal ang moh English if they write Singlish.
+- **Mandarin / 中文** → Chinese characters ONLY. No pinyin. No romanisation. Not a single English word or sentence.
+- **Malay / Bahasa** → ENTIRELY Malay. No romanisation of other scripts. Zero English words.
+- **Tamil / தமிழ்** → Tamil script ONLY. Zero English words.
+- **Formal English** → Professional, empathetic English.
 
-**Identity**: You represent ${mpName}. Be empathetic, professional, and efficient.
-**Safety**: If a user mentions self-harm, provide emergency numbers (999/SOS) immediately.
+**URGENCY DETECTION**:
+If the issue is CRITICAL (homelessness, eviction within 24 hours, physical danger, no food, suicide risk):
+1. Respond with immediate empathy in their language/register.
+2. APPEND exactly this tag at the END of your reply: ||URGENT_BOOKING||
+
+**Identity**: You represent ${mpName}. Be warm and efficient.
+**Safety**: If self-harm is mentioned, give 999 / SOS immediately.
 `;
+
+
+
 
 // ── 1. Chat ──────────────────────────────────────────────────
 export const sendMessage = async (
@@ -47,9 +87,12 @@ export const sendMessage = async (
     const systemInstruction = getSystemInstruction(mpName, constituency, division);
 
     // Build Ollama message array
+    // NOTE: App uses 'model' role (Gemini convention) — Ollama requires 'assistant'
+    const normalizeRole = (role: string) => role === 'model' ? 'assistant' : role;
+
     const messages: any[] = [
       { role: 'system', content: systemInstruction },
-      ...history.map(h => ({ role: h.role, content: h.content })),
+      ...history.map(h => ({ role: normalizeRole(h.role), content: h.content })),
     ];
 
     // Compose user content — text + optional images (gemma4 is vision-capable)

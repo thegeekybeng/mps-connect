@@ -21,8 +21,9 @@ services:
       - "3080:3000"
 
     environment:
-      # PASTE YOUR KEY HERE
-      - OLLAMA_HOST=/ollama-api
-      - OLLAMA_MODEL=gemma4:e2b
+      # Vite requires VITE_ prefix to expose env vars to the browser bundle
+      - VITE_OLLAMA_HOST=/ollama-api
+      - VITE_OLLAMA_MODEL=aisingapore/gemma-sea-lion-v4-27b-it
+      - VITE_SPEECH_HOST=/ai-speech
 
     restart: unless-stopped
