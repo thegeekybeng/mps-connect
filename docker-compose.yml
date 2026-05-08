@@ -23,7 +23,9 @@ services:
     environment:
       # Vite requires VITE_ prefix to expose env vars to the browser bundle
       - VITE_OLLAMA_HOST=/ollama-api
-      - VITE_OLLAMA_MODEL=aisingapore/gemma-sea-lion-v4-27b-it
+      - VITE_OLLAMA_MODEL=gemma4:e2b
       - VITE_SPEECH_HOST=/ai-speech
+      # SECURITY: Change this before exposing externally. Used to gate staff login.
+      - VITE_STAFF_ACCESS_CODE=champMYhead
 
     restart: unless-stopped

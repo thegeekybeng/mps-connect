@@ -10,7 +10,7 @@ import { Message, Case, CategorizationResult, Urgency } from '../types';
 // Nginx proxy base paths — all same-origin, no CORS issues
 const OLLAMA_BASE  = (import.meta.env.VITE_OLLAMA_HOST  || '/ollama-api');
 const SPEECH_BASE  = (import.meta.env.VITE_SPEECH_HOST  || '/ai-speech');
-const MODEL        = (import.meta.env.VITE_OLLAMA_MODEL || 'aisingapore/gemma-sea-lion-v4-27b-it');
+const MODEL        = (import.meta.env.VITE_OLLAMA_MODEL || 'gemma4:e2b');
 
 // ── STT ──────────────────────────────────────────────────────
 /**

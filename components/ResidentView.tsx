@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Message } from '../types';
 import { sendMessage, transcribeAudio, synthesizeSpeech } from '../services/aiService';
-import { Send, Paperclip, Loader2, ShieldCheck, X, FileText, Sparkles, Calendar, CheckCircle2, MapPin, Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
+import { Send, Paperclip, Loader2, ShieldCheck, X, FileText, Sparkles, Calendar, CheckCircle2, MapPin, Mic, MicOff, Volume2, VolumeX, Bot } from 'lucide-react';
 
 interface ResidentViewProps {
   onCompleteSession: (messages: Message[]) => void;
@@ -43,7 +43,7 @@ const ResidentView: React.FC<ResidentViewProps> = ({
     {
       id: '1',
       role: 'model',
-      content: `Hello ${userName}, I am the Digital Assistant for ${mpName}. I can understand English, Mandarin, Malay, Tamil, and Singlish. How can I help you today?`,
+      content: `Hello ${userName}, I am an AI assistant helping to manage cases for ${mpName}'s office (${constituency}). I understand English, Mandarin, Malay, Tamil, and Singlish.\n\n⚠️ AI Disclosure: I am not a human staff member. Responses are AI-generated and subject to human review before any action is taken on your case. How can I help you today?`,
       timestamp: new Date()
     }
   ]);
@@ -219,20 +219,22 @@ const ResidentView: React.FC<ResidentViewProps> = ({
   return (
     <div className="flex flex-col h-full bg-white rounded-xl shadow-2xl overflow-hidden relative">
       {/* Header */}
-      <div className="bg-red-600 text-white p-4 flex justify-between items-center shadow-md z-10">
+      <div className="bg-slate-700 text-white p-4 flex justify-between items-center shadow-md z-10">
         <div className="flex items-center gap-3">
-            <div className="bg-white p-1 rounded-full shadow-sm ring-2 ring-white/20">
-                <div className="rounded-full overflow-hidden h-8 w-8 flex items-center justify-center bg-white">
-                    <img src="https://upload.wikimedia.org/wikipedia/commons/a/a4/Lion_Head_Symbol_of_Singapore.svg" alt="SG Lion" className="h-7 w-7" />
-                </div>
+            <div className="bg-white/10 p-2 rounded-xl">
+                <Bot size={22} className="text-white" />
             </div>
             <div>
                 <h2 className="font-bold text-lg leading-tight">MPS Connect</h2>
                 <div className="flex flex-col">
-                     <p className="text-xs text-red-100">{constituency}</p>
-                     {division && <p className="text-[10px] font-medium text-red-200 uppercase tracking-wider">{division} Division</p>}
+                     <p className="text-xs text-slate-300">{constituency}</p>
+                     {division && <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">{division} Division</p>}
                 </div>
             </div>
+        </div>
+        {/* Persistent AI disclosure badge */}
+        <div className="flex items-center gap-1.5 bg-amber-400/20 border border-amber-400/40 px-2.5 py-1 rounded-full text-amber-300 text-[10px] font-bold uppercase tracking-wide">
+            <Bot size={11} /> AI Assistant
         </div>
         <div className="flex items-center gap-2">
             {/* TTS toggle */}

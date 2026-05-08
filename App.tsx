@@ -2,15 +2,20 @@ import React, { useState } from 'react';
 import { Case, CaseStatus, Urgency, Message, CaseDocument, UserRole } from './types';
 import ResidentView from './components/ResidentView';
 import AdminDashboard from './components/AdminDashboard';
+import ConsentGate from './components/ConsentGate';
+import CaseSubmitted from './components/CaseSubmitted';
 import { analyzeAndCategorizeCase } from './services/aiService';
-import { User, PenTool, ShieldAlert, Gavel, ChevronRight, Lock, Smartphone, ShieldCheck, Loader2, ScanFace, ArrowRight, MapPin } from 'lucide-react';
+import { User, PenTool, ShieldAlert, Gavel, ChevronRight, Lock, Smartphone, ShieldCheck, Loader2, ScanFace, ArrowRight, MapPin, AlertTriangle, Bot } from 'lucide-react';
 
-// Mock Identities for SingPass Simulation (Staff only)
-const STAFF_IDENTITIES: Record<string, { name: string; nric: string; role: UserRole; label: string }> = {
-  'writer': { name: "Sarah Lee", nric: "S****888B", role: 'writer', label: 'Case Writer (Staff)' },
-  'admin': { name: "Chua Beng Huat", nric: "S****999C", role: 'admin', label: 'Constituency Admin' },
-  'mp': { name: "Minister Tan", nric: "S****777D", role: 'mp', label: 'Member of Parliament' }
+// Staff role definitions — NRICs removed (PII, must not be in client bundle)
+const STAFF_IDENTITIES: Record<string, { name: string; role: UserRole; label: string }> = {
+  'writer': { name: "Case Writer", role: 'writer', label: 'Case Writer (Staff)' },
+  'admin': { name: "Constituency Admin", role: 'admin', label: 'Constituency Admin' },
+  'mp': { name: "MP Representative", role: 'mp', label: 'Member of Parliament' }
 };
+
+// Staff access code — set VITE_STAFF_ACCESS_CODE in docker-compose.yml env
+const STAFF_ACCESS_CODE = import.meta.env.VITE_STAFF_ACCESS_CODE || 'demo-staff-2024';
 
 // Initial Data
 const INITIAL_CASES: Case[] = [
@@ -231,8 +236,12 @@ export default function App() {
   const [selectedRoleForLogin, setSelectedRoleForLogin] = useState<UserRole | null>(null);
   const [postalCodeInput, setPostalCodeInput] = useState('');
   const [residentNameInput, setResidentNameInput] = useState('');
+  const [staffCodeInput, setStaffCodeInput] = useState('');
+  const [staffCodeError, setStaffCodeError] = useState(false);
   const [showGovTechPass, setShowGovTechPass] = useState(false);
   const [isProcessingLogin, setIsProcessingLogin] = useState(false);
+  const [showConsentGate, setShowConsentGate] = useState(false);
+  const [submittedCase, setSubmittedCase] = useState<{ id: string; mpName: string; constituency: string } | null>(null);
 
   const handleLoginSelect = (role: UserRole) => {
     setSelectedRoleForLogin(role);
@@ -244,36 +253,46 @@ export default function App() {
     }
   };
 
-  const handleSingPassLogin = () => {
+  const handleResidentLogin = () => {
     setIsProcessingLogin(true);
-    
-    // Simulate Network Delay
     setTimeout(() => {
-        if (selectedRoleForLogin === 'resident') {
-            // Calculate Constituency
-            const constituencyInfo = getConstituencyInfo(postalCodeInput);
-            
-            const residentIdentity: UserIdentity = {
-                name: residentNameInput || 'Tan Ah Gao',
-                nric: 'S****123A',
-                role: 'resident',
-                postalCode: postalCodeInput,
-                constituency: constituencyInfo?.constituency,
-                division: constituencyInfo?.division,
-                mpName: constituencyInfo?.mpName,
-                branchLocation: constituencyInfo?.branchLocation,
-                mpsSchedule: constituencyInfo?.mpsSchedule
-            };
-            setCurrentUser(residentIdentity);
-        } else if (selectedRoleForLogin) {
-            // Staff Login
-            const staff = STAFF_IDENTITIES[selectedRoleForLogin];
-            setCurrentUser(staff);
-        }
-        
+        const constituencyInfo = getConstituencyInfo(postalCodeInput);
+        const residentIdentity: UserIdentity = {
+            name: residentNameInput || 'Resident',
+            nric: '',
+            role: 'resident',
+            postalCode: postalCodeInput,
+            constituency: constituencyInfo?.constituency,
+            division: constituencyInfo?.division,
+            mpName: constituencyInfo?.mpName,
+            branchLocation: constituencyInfo?.branchLocation,
+            mpsSchedule: constituencyInfo?.mpsSchedule
+        };
+        setCurrentUser(residentIdentity);
         setIsAuthenticated(true);
         setIsProcessingLogin(false);
-    }, 1500);
+        setShowConsentGate(true);
+    }, 800);
+  };
+
+  const handleStaffLogin = () => {
+    if (staffCodeInput.trim() !== STAFF_ACCESS_CODE) {
+        setStaffCodeError(true);
+        setTimeout(() => setStaffCodeError(false), 2000);
+        return;
+    }
+    setIsProcessingLogin(true);
+    setTimeout(() => {
+        const staff = STAFF_IDENTITIES[selectedRoleForLogin as string];
+        setCurrentUser({ ...staff, nric: '' });
+        setIsAuthenticated(true);
+        setIsProcessingLogin(false);
+    }, 600);
+  };
+
+  const handleSingPassLogin = () => {
+    if (selectedRoleForLogin === 'resident') handleResidentLogin();
+    else handleStaffLogin();
   };
 
   const handleLogout = () => {
@@ -289,22 +308,20 @@ export default function App() {
   const handleResidentSubmit = async (messages: Message[]) => {
     if (!currentUser) return;
 
-    // Initial categorization analysis
     const analysis = await analyzeAndCategorizeCase(messages);
 
+    const caseId = `SG-${new Date().getFullYear()}-${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`;
+
     const newCase: Case = {
-        id: `SG-${new Date().getFullYear()}-${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`,
+        id: caseId,
         residentName: currentUser.name,
-        nricMasked: currentUser.nric,
+        nricMasked: '',
         constituency: currentUser.constituency || 'Unknown',
         division: currentUser.division,
         mpName: currentUser.mpName || 'Unknown MP',
-        
-        // Assigned from postal code
         assignedConstituency: currentUser.constituency,
         assignedDivision: currentUser.division,
         assignedMPName: currentUser.mpName,
-
         category: analysis.category,
         subCategory: analysis.subCategory,
         urgency: analysis.urgency,
@@ -318,13 +335,13 @@ export default function App() {
         createdAt: new Date(),
         approvals: [],
         history: [
-            { timestamp: new Date(), action: 'Case initiated via MPS Connect App', user: 'Resident (via SingPass)' },
-            { timestamp: new Date(), action: `Categorized as ${analysis.category}`, user: 'AI Agent' }
+            { timestamp: new Date(), action: 'Case initiated via MPS Connect App', user: 'Resident' },
+            { timestamp: new Date(), action: `AI categorised as ${analysis.category} — pending human review`, user: 'AI Agent' }
         ],
         internalNotes: [
             {
                 id: `note-${Date.now()}`,
-                content: `Automated priority assessment: ${analysis.urgency}. Based on keywords in transcript.`,
+                content: `AI urgency assessment: ${analysis.urgency}. All AI outputs subject to human review before action.`,
                 author: 'AI Agent',
                 timestamp: new Date()
             }
@@ -332,66 +349,102 @@ export default function App() {
     };
 
     setCases(prev => [newCase, ...prev]);
-    // Reset to home or show success
-    alert(`Thank you, ${currentUser.name}. Your case has been submitted to ${currentUser.mpName}'s office. Reference: ${newCase.id}`);
-    handleLogout();
+    // Show persistent success screen instead of dismissable alert
+    setSubmittedCase({ id: caseId, mpName: currentUser.mpName || 'MP', constituency: currentUser.constituency || '' });
+    setIsAuthenticated(false);
+    setCurrentUser(null);
   };
 
   const handleUpdateCase = (updatedCase: Case) => {
     setCases(prev => prev.map(c => c.id === updatedCase.id ? updatedCase : c));
   };
 
+  // Case submitted success screen
+  if (submittedCase) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
+        <div className="max-w-md w-full h-[600px]">
+          <CaseSubmitted
+            referenceId={submittedCase.id}
+            residentName=""
+            mpName={submittedCase.mpName}
+            constituency={submittedCase.constituency}
+            onDone={() => { setSubmittedCase(null); handleLogout(); }}
+          />
+        </div>
+      </div>
+    );
+  }
+
   // Landing Page
   if (!isAuthenticated && !showRoleSelection) {
     return (
-      <div className="min-h-screen flex flex-col bg-gradient-to-b from-red-900 via-red-800 to-slate-900 relative overflow-hidden">
-        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
-        
-        <div className="flex-1 flex flex-col items-center justify-center px-4 relative z-10">
-            <div className="mb-8 p-4 bg-white/10 backdrop-blur-md rounded-full border border-white/20 shadow-2xl animate-in fade-in zoom-in duration-700">
-                <img src="https://upload.wikimedia.org/wikipedia/commons/a/a4/Lion_Head_Symbol_of_Singapore.svg" className="h-24 w-24 drop-shadow-lg" alt="SG Lion" />
-            </div>
-            
-            <h1 className="text-5xl md:text-7xl font-bold text-white text-center mb-4 tracking-tight drop-shadow-md">
-                MPS Connect
-            </h1>
-            <p className="text-red-100 text-lg md:text-xl text-center mb-12 max-w-2xl font-light leading-relaxed">
-                Round the clock connectivity for Singaporeans.
-            </p>
-
-            <button 
-                onClick={() => setShowRoleSelection(true)}
-                className="group relative bg-red-600 hover:bg-red-500 text-white text-lg font-semibold py-4 px-12 rounded-full transition-all shadow-[0_0_40px_-10px_rgba(220,38,38,0.5)] hover:shadow-[0_0_60px_-10px_rgba(220,38,38,0.7)] hover:-translate-y-1 flex items-center gap-3"
-            >
-                <span>Log in with Singpass</span>
-                <ArrowRight className="group-hover:translate-x-1 transition-transform" />
-            </button>
-            <p className="text-red-200/60 text-sm mt-4 flex items-center gap-2">
-                <ShieldCheck size={14}/> Authentication verified by SingPass
-            </p>
+      <div className="min-h-screen flex flex-col bg-gradient-to-b from-slate-800 via-slate-700 to-slate-900 relative overflow-hidden">
+        {/* DEMO disclaimer banner — top of page */}
+        <div className="w-full bg-amber-400 text-amber-900 text-xs font-bold text-center py-2 px-4 z-50 relative flex items-center justify-center gap-2">
+          <AlertTriangle size={13} />
+          DEMO ONLY — Not an official Singapore Government service. Do not submit real personal data.
         </div>
 
-        <footer className="py-8 text-center relative z-10">
-            <p className="text-slate-400 text-sm mb-1">
-                A demo of an efficient connectivity system between resident, volunteers, MPs and Civil service.
-            </p>
-            <p className="text-slate-500 text-xs font-medium mb-2">Envisioned by TheGeekyBeng</p>
-            <div className="flex items-center justify-center gap-2 text-slate-600 text-xs mt-4">
-                 <span>Powered by Local AI</span>
+        <div className="flex-1 flex flex-col items-center justify-center px-4 relative z-10">
+            <div className="mb-8 p-5 bg-white/10 backdrop-blur-md rounded-2xl border border-white/20 shadow-2xl animate-in fade-in zoom-in duration-700">
+                <Bot size={64} className="text-white/80" />
             </div>
+
+            <h1 className="text-5xl md:text-6xl font-bold text-white text-center mb-4 tracking-tight drop-shadow-md">
+                MPS Connect
+            </h1>
+            <p className="text-slate-300 text-base md:text-lg text-center mb-2 max-w-xl font-light leading-relaxed">
+                AI-powered civic case management — research demonstration.
+            </p>
+            <p className="text-slate-500 text-xs text-center mb-10">
+                Envisioned by TheGeekyBeng · Powered by Local AI
+            </p>
+
+            <button
+                onClick={() => setShowRoleSelection(true)}
+                className="group relative bg-slate-600 hover:bg-slate-500 text-white text-lg font-semibold py-4 px-12 rounded-full transition-all shadow-lg hover:-translate-y-1 flex items-center gap-3"
+            >
+                <span>Get Started</span>
+                <ArrowRight className="group-hover:translate-x-1 transition-transform" />
+            </button>
+        </div>
+
+        <footer className="py-6 text-center relative z-10">
+            <p className="text-slate-600 text-xs">
+                This demo is not affiliated with any government body, MP, or statutory board.
+            </p>
         </footer>
       </div>
     );
   }
 
-  // Role Selection / Login Interstitial
+  // Consent gate — shown after resident login, before chat
+  if (isAuthenticated && showConsentGate && currentUser?.role === 'resident') {
+    return (
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
+        <div className="max-w-md w-full h-[680px]">
+          <ConsentGate
+            mpName={currentUser.mpName || 'MP'}
+            constituency={currentUser.constituency || ''}
+            onConsent={() => setShowConsentGate(false)}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // Role Selection / Login
   if (!isAuthenticated && showRoleSelection) {
       return (
           <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-              <div className="max-w-md w-full bg-white rounded-2xl shadow-2xl overflow-hidden">
-                  <div className="bg-red-600 p-6 text-center">
-                      <h2 className="text-white text-xl font-bold">SingPass Identity Verification</h2>
-                      <p className="text-red-100 text-sm">Select your identity to simulate login</p>
+              <div className="w-full bg-amber-50 border border-amber-200 py-2 px-4 text-xs font-bold text-amber-800 text-center fixed top-0 left-0 z-50 flex items-center justify-center gap-2">
+                <AlertTriangle size={12} /> DEMO — Not an official Singapore Government service
+              </div>
+              <div className="max-w-md w-full bg-white rounded-2xl shadow-2xl overflow-hidden mt-10">
+                  <div className="bg-slate-700 p-6 text-center">
+                      <h2 className="text-white text-xl font-bold">MPS Connect — Demo Login</h2>
+                      <p className="text-slate-300 text-sm">Select access type to continue</p>
                   </div>
                   
                   <div className="p-8 space-y-6">
@@ -459,14 +512,27 @@ export default function App() {
                                         </div>
                                     </div>
                                 ) : (
-                                    <div className="space-y-6 text-center">
-                                         <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3 text-blue-600 animate-pulse">
-                                            <ShieldCheck size={40} />
+                                    <div className="space-y-4">
+                                        <div className="text-center mb-2">
+                                            <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-3 text-slate-600">
+                                                <ShieldCheck size={32} />
+                                            </div>
+                                            <h3 className="font-bold text-gray-900">Staff Access</h3>
+                                            <p className="text-xs text-gray-500 mt-1">Enter the staff access code to continue.</p>
                                         </div>
-                                        <h3 className="font-bold text-gray-900">GovTech Pass 2FA</h3>
-                                        <p className="text-sm text-gray-600">Please approve the login request on your secure device.</p>
-                                        <div className="bg-gray-100 p-4 rounded-lg font-mono text-xl tracking-[0.5em] font-bold text-gray-800">
-                                            82 19 43
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Access Code</label>
+                                            <input
+                                                type="password"
+                                                value={staffCodeInput}
+                                                onChange={(e) => setStaffCodeInput(e.target.value)}
+                                                onKeyDown={(e) => e.key === 'Enter' && handleStaffLogin()}
+                                                placeholder="Enter staff access code"
+                                                className={`w-full px-4 py-3 rounded-lg border focus:ring-2 focus:ring-slate-500 outline-none ${
+                                                    staffCodeError ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                                                }`}
+                                            />
+                                            {staffCodeError && <p className="text-xs text-red-600 mt-1">Incorrect access code.</p>}
                                         </div>
                                     </div>
                                 )}
@@ -478,16 +544,16 @@ export default function App() {
                                     <button 
                                         onClick={handleSingPassLogin}
                                         disabled={selectedRoleForLogin === 'resident' && (!postalCodeInput || !residentNameInput)}
-                                        className="flex-1 bg-red-600 hover:bg-red-700 text-white py-3 rounded-lg font-bold shadow-lg disabled:opacity-50 flex items-center justify-center gap-2"
+                                        className="flex-1 bg-slate-700 hover:bg-slate-800 text-white py-3 rounded-lg font-bold shadow-lg disabled:opacity-50 flex items-center justify-center gap-2"
                                     >
-                                        {isProcessingLogin ? <Loader2 className="animate-spin" /> : 'Verify & Login'}
+                                        {isProcessingLogin ? <Loader2 className="animate-spin" /> : 'Continue'}
                                     </button>
                                 </div>
                           </div>
                       )}
                   </div>
                   <div className="bg-gray-50 p-4 text-center border-t border-gray-200">
-                      <p className="text-xs text-gray-400">Secured by Singapore Government Tech Stack</p>
+                      <p className="text-xs text-gray-400">MPS Connect Demo · Not affiliated with any government body</p>
                   </div>
               </div>
           </div>
