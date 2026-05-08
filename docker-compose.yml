@@ -1,31 +1,39 @@
-version: '3.8'
-
 services:
   mps-connect:
-    # Use standard Node image (No build step = No crashes on NAS)
     image: node:20-alpine
     container_name: mps-connect
     working_dir: /app
-    
-    # Map your NAS folder to the container
-    # IMPORTANT: Ensure '/volume1/docker/mps-connect' matches your actual path
     volumes:
       - /volume1/compose/mps-connect:/app
-
-    # Install dependencies and run in dev mode
     command: >
       sh -c "npm install && npm run dev -- --host"
-
-    # Map port 3080 on NAS to 3000 in container
     ports:
       - "3080:3000"
-
     environment:
-      # Vite requires VITE_ prefix to expose env vars to the browser bundle
       - VITE_OLLAMA_HOST=/ollama-api
       - VITE_OLLAMA_MODEL=gemma4:e2b
       - VITE_SPEECH_HOST=/ai-speech
-      # SECURITY: Change this before exposing externally. Used to gate staff login.
-      - VITE_STAFF_ACCESS_CODE=champMYhead
-
+      # Loaded from .env — never hardcode this value here
+      - VITE_STAFF_ACCESS_CODE=${VITE_STAFF_ACCESS_CODE}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/ > /dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
     restart: unless-stopped
+    networks:
+      - ai-bridge
+
+networks:
+  ai-bridge:
+    external: true
