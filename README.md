@@ -27,7 +27,7 @@ Staff get a clean dashboard with all cases in one view — no sticky notes, no s
 | Layer | Technology |
 | --- | --- |
 | Frontend | React + TypeScript + Vite |
-| AI inference | Ollama — `aisingapore/gemma-sea-lion-v4-27b-it` (local, no cloud API) |
+| AI inference | Ollama — `gemma4:e2b` (proxied via nginx, local network) |
 | Speech-to-text | Wyoming Whisper via FastAPI bridge |
 | Text-to-speech | Wyoming Piper via FastAPI bridge |
 | Containerisation | Docker Compose |
@@ -40,10 +40,10 @@ Staff get a clean dashboard with all cases in one view — no sticky notes, no s
 The tool is designed for MPS sessions — low-frequency, supervised use. A full backend adds deployment complexity that isn't justified at this stage. State lives in-memory for the session, which is fine when a case worker is present and the session ends cleanly. The trade-off is accepted and documented.
 
 **Why local inference?**
-Resident data is sensitive by nature. Running inference locally via Ollama means no case content ever leaves the network — no cloud API, no usage logs on a third-party server. It also eliminates per-session API costs, which adds up at scale.
+Resident data is sensitive by nature. Running inference locally via Ollama means no case content ever leaves the network — no cloud API, no usage logs on a third-party server. It also eliminates per-session API costs at scale.
 
-**Why SEA-LION (aisingapore/gemma-sea-lion-v4-27b-it)?**
-Most LLMs handle formal English well but struggle with the way residents actually speak — Singlish, code-switching, partial sentences. SEA-LION is trained on Southeast Asian language data and handles this significantly better than general-purpose models for this use case.
+**Why `gemma4:e2b`?**
+Tested against several models for this specific workload. It handles the colloquial, code-switching way residents actually speak well enough to extract structured case information reliably. Model selection here was empirical, not theoretical.
 
 **Why the consent gate?**
 Privacy by design. Before any resident data is processed by the AI, explicit consent is collected for three things: AI use, data handling, and demo acknowledgement. This is a gate, not a notice — nothing proceeds without all three checked.
@@ -84,8 +84,8 @@ App is available at `http://localhost:3080`.
 | Variable | Purpose |
 | --- | --- |
 | `VITE_STAFF_ACCESS_CODE` | Passcode required to access the staff portal |
-| `OLLAMA_HOST` | Base URL of Ollama instance (include `/v1` path) |
-| `AI_MODEL` | Model name to use for inference |
+| `VITE_OLLAMA_HOST` | Ollama base path (default: `/ollama-api`, proxied via nginx) |
+| `VITE_OLLAMA_MODEL` | Model name (default: `gemma4:e2b`) |
 
 ---
 
