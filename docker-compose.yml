@@ -1,33 +1,31 @@
 services:
   mps-connect:
-    image: node:20-alpine
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - VITE_OLLAMA_HOST=${VITE_OLLAMA_HOST}
+        - VITE_OLLAMA_MODEL=${VITE_OLLAMA_MODEL}
+        - VITE_SPEECH_HOST=${VITE_SPEECH_HOST}
+        - VITE_STAFF_ACCESS_CODE=${VITE_STAFF_ACCESS_CODE}
     container_name: mps-connect
-    working_dir: /app
-    volumes:
-      - /volume1/compose/mps-connect:/app
-    command: >
-      sh -c "npm install && npm run dev -- --host"
     ports:
-      - "3080:3000"
-    environment:
-      - VITE_OLLAMA_HOST=/ollama-api
-      - VITE_OLLAMA_MODEL=gemma4:e2b
-      - VITE_SPEECH_HOST=/ai-speech
-      # Loaded from .env — never hardcode this value here
-      - VITE_STAFF_ACCESS_CODE=${VITE_STAFF_ACCESS_CODE}
+      - "3080:80"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/ > /dev/null || exit 1"]
+      test: ["CMD", "curl", "-sf", "http://localhost:80/"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 30s
+      start_period: 15s
     security_opt:
       - no-new-privileges:true
     deploy:
       resources:
         limits:
-          memory: 256M
+          memory: 128M
           cpus: "0.5"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
     networks:
       - ai-bridge
