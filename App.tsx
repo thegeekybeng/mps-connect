@@ -143,8 +143,8 @@ const POSTAL_TO_CONSTITUENCY: Record<string, { c: string; d: string; mp: string;
     // 20: Jalan Besar GRC (Kampong Glam)
     '20': { c: 'Jalan Besar GRC', d: 'Kampong Glam', mp: 'Ms. Denise Phua', branch: 'Blk 462 Crawford Lane #01-57', schedule: 'Every Monday, 8.00 PM' },
     
-    // 21: Jalan Besar GRC (Whampoa) - Mr. Shawn Low
-    '21': { c: 'Jalan Besar GRC', d: 'Whampoa', mp: 'Mr. Shawn Low', branch: 'Blk 85 Whampoa Drive #01-238', schedule: 'Every Wednesday, 7.30 PM' },
+    // 21: Jalan Besar GRC (Whampoa) - Mr. Shawn Loh
+    '21': { c: 'Jalan Besar GRC', d: 'Whampoa', mp: 'Mr. Shawn Loh', branch: 'Blk 85 Whampoa Drive #01-238', schedule: 'Every Wednesday, 7.30 PM' },
 
     // 22-24: Orchard (Tanjong Pagar)
     '22': { c: 'Tanjong Pagar GRC', d: 'Moulmein-Cairnhill', mp: 'Mr. Alvin Tan', branch: 'Blk 10 Pek Kio Market #01-01', schedule: 'Every Tuesday, 7.30 PM' },
@@ -160,9 +160,9 @@ const POSTAL_TO_CONSTITUENCY: Record<string, { c: string; d: string; mp: string;
     '28': { c: 'Bishan-Toa Payoh GRC', d: 'Toa Payoh West-Thomson', mp: 'Mr. Chee Hong Tat', branch: 'Blk 121 Toa Payoh Lor 2 #01-384', schedule: 'Every Tuesday, 7.30 PM' },
     '29': { c: 'Bishan-Toa Payoh GRC', d: 'Toa Payoh West-Thomson', mp: 'Mr. Chee Hong Tat', branch: 'Blk 121 Toa Payoh Lor 2 #01-384', schedule: 'Every Tuesday, 7.30 PM' },
     
-    // 30, 32: Jalan Besar GRC (Whampoa) - Mr. Shawn Low
-    '30': { c: 'Jalan Besar GRC', d: 'Whampoa', mp: 'Mr. Shawn Low', branch: 'Blk 85 Whampoa Drive #01-238', schedule: 'Every Wednesday, 7.30 PM' },
-    '32': { c: 'Jalan Besar GRC', d: 'Whampoa', mp: 'Mr. Shawn Low', branch: 'Blk 85 Whampoa Drive #01-238', schedule: 'Every Wednesday, 7.30 PM' },
+    // 30, 32: Jalan Besar GRC (Whampoa) - Mr. Shawn Loh
+    '30': { c: 'Jalan Besar GRC', d: 'Whampoa', mp: 'Mr. Shawn Loh', branch: 'Blk 85 Whampoa Drive #01-238', schedule: 'Every Wednesday, 7.30 PM' },
+    '32': { c: 'Jalan Besar GRC', d: 'Whampoa', mp: 'Mr. Shawn Loh', branch: 'Blk 85 Whampoa Drive #01-238', schedule: 'Every Wednesday, 7.30 PM' },
     
     // 31: Bishan-Toa Payoh GRC
     '31': { c: 'Bishan-Toa Payoh GRC', d: 'Toa Payoh Central', mp: 'Mr. Chong Kee Hiong', branch: 'Blk 158 Toa Payoh Lor 1 #01-01', schedule: 'Every Tuesday, 8.00 PM' },

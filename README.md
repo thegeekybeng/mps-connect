@@ -319,4 +319,32 @@ Staff access is gated by an environment-variable access code. Do not use a weak 
 
 ---
 
+## Future Development
+
+### Structured Constituency Routing
+
+The current implementation maps postal sector prefixes to constituency data (MP name, GRC, division, branch address, session schedule) using a client-side lookup table in the frontend bundle. This approach has three limitations:
+
+- The mapping is visible in the browser bundle — anyone can inspect it
+- MP assignments change after every General Election and must be updated via a frontend rebuild
+- Postal sector prefixes are coarse — a single two-digit prefix can span multiple divisions
+
+**Planned architecture:**
+
+```text
+Resident (postal code)
+  → mps-ai-proxy: GET /api/constituency?postal={6-digit}
+    → OneMap API (SLA, official): postal code → planning area + lat/lng
+    → server-side JSON config: planning area → GRC, division, MP name, branch, schedule
+  ← verified, current constituency data
+```
+
+The `POSTAL_TO_CONSTITUENCY` lookup moves from the React bundle into a server-side config file maintained on `mps-ai-proxy`. After each General Election, a single config file update and proxy restart is all that is required — no frontend rebuild, no redeployment.
+
+The planning area layer (30+ areas) is resolved by OneMap, which is maintained by the Singapore Land Authority. The MP assignment layer (~30 planning areas → MP/GRC/branch) is maintained as a versioned server-side config file, auditable and updatable independently of any application code.
+
+This architectural change eliminates the risk of stale MP data being served from a public bundle, and provides a single source of truth for constituency routing that survives General Election boundary changes.
+
+---
+
 Built by [@thegeekybeng](https://github.com/thegeekybeng)
