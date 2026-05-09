@@ -1,30 +1,35 @@
 # MPS-Connect
 
-A constituent case management tool built to cut down the time it takes to log, triage, and follow up on cases received at Meet-the-People Sessions (MPS).
+A 24/7 digital twin of the Meet-the-People Session — built to extend constituency help services beyond the single weekly window that residents currently have access to.
 
-Before this, everything was manual — residents had to repeat themselves, staff had to transcribe on the spot, and nothing was structured enough to action quickly. This changes that.
+The physical MPS happens once a week for a short window. Residents who cannot make it during that window — due to work, caregiving, or mobility constraints — have no equivalent option. The existing digital alternative is an online form: static, repetitive, and fundamentally incapable of helping a resident think through and articulate a complex problem. It gathers arbitrary information rather than the right information.
+
+MPS-Connect addresses this. It translates one of the most physical and legacy constituency administrative workflows into a digital experience that a resident can access at any time, from anywhere. The intent is not to replace the face-to-face session — it is to complement it. A resident who has already engaged with MPS-Connect arrives at the physical session with a structured, categorised, and pre-triaged case. That creates time for what the physical session is actually for: a genuine, meaningful interaction between the resident and their elected Member of Parliament.
+
+The broader vision is to demonstrate how AI can close the gap between civic need and civic response — enabling immediate action where the situation warrants it, and reducing the wait that currently sits between a resident identifying a problem and a case worker being in a position to help.
 
 ---
 
 ## What it does
 
-Residents arrive, type out their concern in a chat interface (or speak it — STT is supported), and an AI assistant helps them articulate the full picture. By the time a case worker picks it up, the case is already structured, categorised, and assigned an urgency level.
+Residents access MPS-Connect at any time. They describe their concern in natural language — typing or speaking — and the AI assistant helps them articulate the full picture across areas like housing, employment, healthcare, family support, and immigration. By the time the case reaches a staff member, it is already structured, categorised, and assigned an urgency level.
 
-Staff get a clean dashboard with all cases in one view — no sticky notes, no scribbled forms.
+Staff get a unified dashboard with all incoming cases. Pre-session triage is done. The physical MPS can focus on conversations that matter rather than transcription.
 
 **Key capabilities:**
 
-- AI-assisted resident intake in natural language (English, Mandarin, Malay, Tamil, Singlish)
+- 24/7 resident access — not limited to the weekly session window
+- AI-assisted intake in natural language (English, Mandarin, Malay, Tamil, Singlish)
 - Automatic case categorisation and urgency classification
-- Staff dashboard with full case history
+- Urgent case flagging — enabling immediate action before the next physical session
+- Staff dashboard with full case view and case history
 - Consent gate before any AI interaction (privacy and demo disclosure)
-- Reference number generated per case — no more lost submissions
-
----
+- Reference number per submission — no lost cases
 
 ## Tech stack
 
 | Layer | Technology |
+
 | --- | --- |
 | Frontend | React + TypeScript + Vite |
 | AI proxy | Node.js + Express (server-side, internal only) |
