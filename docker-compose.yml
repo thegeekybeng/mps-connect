@@ -4,10 +4,9 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        - VITE_OLLAMA_HOST=${VITE_OLLAMA_HOST}
-        - VITE_OLLAMA_MODEL=${VITE_OLLAMA_MODEL}
         - VITE_SPEECH_HOST=${VITE_SPEECH_HOST}
         - VITE_STAFF_ACCESS_CODE=${VITE_STAFF_ACCESS_CODE}
+        # VITE_OLLAMA_HOST and VITE_OLLAMA_MODEL removed — AI now goes via server-side proxy
     container_name: mps-connect
     ports:
       - "3080:80"
@@ -26,6 +25,38 @@ services:
           cpus: "0.5"
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    networks:
+      - ai-bridge
+    depends_on:
+      mps-ai-proxy:
+        condition: service_healthy
+
+  # Server-side AI proxy — system prompt, PII masking, canary tokens,
+  # injection sanitization, and audit logging all live here.
+  # The browser never contacts Ollama directly.
+  mps-ai-proxy:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: mps-ai-proxy
+    environment:
+      - OLLAMA_ENDPOINT=${OLLAMA_ENDPOINT:-http://100.x.x.x:11434/api/chat}
+      - AI_MODEL=${AI_MODEL:-gemma4:e2b}
+      - PORT=3103
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3103/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: "0.5"
     restart: unless-stopped
     networks:
       - ai-bridge
