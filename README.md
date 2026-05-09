@@ -316,7 +316,7 @@ Copy `.env.example` to `.env` and set:
 
 ```env
 VITE_STAFF_ACCESS_CODE=your-chosen-code
-OLLAMA_ENDPOINT=http://100.x.x.x:11434/api/chat
+OLLAMA_ENDPOINT=http://<ollama-host>:11434/api/chat
 AI_MODEL=gemma4:e2b
 ```
 
