@@ -15,8 +15,6 @@
 | **Phase 4** | HITL-RAG continuous learning pipeline, confidence-based case clustering, batch approval for routine cases | 🔲 Planned |
 
 > **NDI registration note:** SingPass OIDC is a Phase 3 requirement, not Phase 2. The no-SingPass document portal (case ID token) unblocks Phase 2 without NDI approval. Begin NDI registration at <https://api.singpass.gov.sg> when Phase 2 is complete.
-
-
 ---
 
 ### Structured Constituency Routing
@@ -212,7 +210,6 @@ The causality engine is live as a 3-stage Ollama pipeline in `api/server.js`, ac
 | 4 — Causality opt-in | Action gate | Downstream scheme suggestions require explicit human action to add to the case |
 | 5 — MP approval acknowledgement | Approval gate | MP must confirm they have reviewed AI reasoning before approving the letter |
 
-
 Every gate produces an immutable audit event. The full chain — what the AI proposed, what the human confirmed or corrected, and why — is queryable per case.
 
 **Inline letter annotation** (Phase 3). In review mode, hovering over any sentence in the generated letter surfaces a tooltip: the AI's reasoning for that sentence, the causal node it references, and the exact quote from the resident's account that the sentence is based on.
@@ -261,12 +258,53 @@ The MP's formal authority is the mechanism — a resident requesting their own m
 - Same HITL gates and Copy to Gather workflow as all other letters
 - `documentQueue` gains a new type: `'document_request'`
 
-
 **SingPass OIDC** (Phase 3). For high-assurance cases — immigration, legal proceedings — SingPass OIDC verifies the resident's identity against the case record. NDI developer registration: <https://api.singpass.gov.sg>. This is not required for Phase 2 document uploads.
-
 
 #### What this resolves
 
 Agencies do not talk to each other. The resident is currently the integration layer — carrying documents between silos, explaining the same situation repeatedly, following up individually with each agency. The MP letter was the original coordination mechanism. MPS-Connect systematises it: the causality engine sees the full case, multi-agency letters notify all agencies simultaneously, G2G document requests route evidence directly between institutions, and the audit trail makes agency response gaps visible. The demand-driven document list is the first time a resident is told precisely what is needed and why — not from a form, but from the specific causal logic of their case.
+
+---
+
+### Scale-out Path
+
+MPS-Connect is intentionally scoped for single-branch to small-cluster deployment. This is a deliberate architectural decision. The load profile does not justify distributed systems complexity — adding it prematurely creates maintenance burden that prevents the platform from reaching deployment at all.
+
+**Current architecture ceiling (single-branch deployment):**
+
+- Concurrent users: 50–200 — adequate for any single constituency at full digital adoption
+- Case submissions: ~1,000 per week per branch at 10× current physical MPS attendance
+- Causality engine: 3 sequential Ollama calls, up to 120 seconds synchronously — adequate for <10 concurrent analyses
+
+The stateless Express proxy scales horizontally trivially. The causality engine is the only non-trivial bottleneck in the current architecture — it is the sole item that is both long-running and synchronous.
+
+**Scale triggers and required changes:**
+
+| Load condition | Architectural change | Complexity |
+| --- | --- | --- |
+| >3 branches on one instance | SQLite → PostgreSQL with PgBouncer; partition audit tables by branch/month; read replica for analytics queries | Medium |
+| >10 concurrent causality analyses | Sync HTTP → async job queue (BullMQ + Redis); client posts job, receives job ID, polls `/api/ai/causality/:jobId`; worker pool processes queue | Medium |
+| National deployment (97 branches) | Multi-tenant branch isolation (row-level security by branch ID); Ollama horizontal inference cluster behind BullMQ; k3s or managed Kubernetes for container orchestration | High |
+| High-availability requirement | Multiple stateless Express proxy instances behind nginx upstream block; zero stateful changes required — proxy holds no session state | Low |
+| Cross-branch SLA analytics | Read replica + materialized views for aggregated SLA metrics across branches; no schema change to the append-only audit tables | Low |
+
+**What the async causality job queue looks like:**
+
+```text
+POST /api/ai/causality          → { jobId: "cwi-abc123", status: "queued" }
+GET  /api/ai/causality/cwi-abc123
+  → { status: "running", stage: "reasoning" }   (poll every 5s)
+  → { status: "done", causalGraph: {...}, letters: [...] }
+```
+
+The client-side `runCausalityEngine()` function absorbs this change transparently — the polling logic replaces the current 180s fetch timeout. No changes required to the Case Intelligence panel UI.
+
+**What stays unchanged at national scale:**
+
+- Security model — all LLM calls remain server-side; PII never reaches the browser
+- HITL governance — gates are stateless checks against case data; scale has no effect
+- Audit integrity — append-only tables with cryptographic chain; PostgreSQL preserves this via trigger enforcement on `UPDATE` and `DELETE`
+- Local inference — Ollama scales by adding instances behind the queue; no external API dependency introduced
+- PDPA compliance — `██` placeholder pattern and branch-scoped data isolation hold regardless of deployment size
 
 ---

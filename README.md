@@ -284,6 +284,24 @@ A browser alert is dismissed and the reference number is gone. A resident asking
 
 ---
 
+## Architecture for scale
+
+MPS-Connect is scoped for single-branch to small-cluster deployment. A single constituency holds roughly 60,000 residents. Physical MPS sessions see 50–100 cases per week — even at 10× digital adoption that is ~1,000 submissions per week, or 6–8 concurrent users at any peak moment. Scaled to all 97 branches nationally, absolute peak is ~2,000–3,000 concurrent users system-wide. The current architecture handles this load correctly. Adding distributed systems complexity before the load requires it is engineering theatre that would have prevented this project from being built at all.
+
+The stateless Express proxy scales horizontally trivially — add instances behind an nginx upstream block, no stateful changes needed. The causality engine is the only non-trivial bottleneck.
+
+| Trigger | Architectural change |
+|---|---|
+| >3 branches on one deployment | SQLite → PostgreSQL with PgBouncer; row-level security by branch ID; read replica for analytics |
+| >10 concurrent causality analyses | Sync HTTP → async job queue (BullMQ + Redis); resident submits, receives job ID, polls `/api/ai/causality/:jobId` |
+| National deployment (97 branches) | Ollama inference cluster or inference queue behind BullMQ; multi-tenant branch isolation; k3s or managed Kubernetes |
+| High-availability requirement | Multiple stateless proxy instances behind nginx upstream; already stateless, horizontally trivial |
+| Cross-branch SLA analytics | Read replica + materialized views; no schema change to the append-only audit tables |
+
+The causality engine is a 3-stage sequential LLM pipeline taking up to 120 seconds synchronously. At load it converts to an async job — the client posts a job, receives a job ID, and polls. That is the single architectural change that unlocks national-scale deployment. Everything else is standard horizontal replication. The full scale-out path is in [`ROADMAP.md`](./ROADMAP.md).
+
+---
+
 ## Setup
 
 ### Prerequisites
