@@ -51,18 +51,15 @@ const ResidentView: React.FC<ResidentViewProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [file, setFile] = useState<string | null>(null);
 
-  // Voice state
-  const [voiceEnabled, setVoiceEnabled] = useState(false);  // TTS auto-play toggle
-  const [isRecording, setIsRecording] = useState(false);     // microphone active
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef   = useRef<Blob[]>([]);
   const currentAudioRef  = useRef<HTMLAudioElement | null>(null);
 
-  // ── TTS playback ─────────────────────────────────────────────
   const playResponse = useCallback(async (text: string) => {
     if (!voiceEnabled || !text.trim()) return;
-    // Stop any currently playing audio
     if (currentAudioRef.current) {
       currentAudioRef.current.pause();
       URL.revokeObjectURL(currentAudioRef.current.src);
@@ -72,17 +69,13 @@ const ResidentView: React.FC<ResidentViewProps> = ({
       const url = await synthesizeSpeech(text);
       const audio = new Audio(url);
       currentAudioRef.current = audio;
-      audio.onended = () => {
-        URL.revokeObjectURL(url);
-        currentAudioRef.current = null;
-      };
+      audio.onended = () => { URL.revokeObjectURL(url); currentAudioRef.current = null; };
       audio.play();
     } catch (e) {
       console.warn('TTS playback failed:', e);
     }
   }, [voiceEnabled]);
 
-  // ── STT recording ─────────────────────────────────────────────
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -116,7 +109,6 @@ const ResidentView: React.FC<ResidentViewProps> = ({
     setIsRecording(false);
   };
 
-  // Cleanup audio on unmount
   useEffect(() => {
     return () => {
       if (currentAudioRef.current) {
@@ -126,20 +118,14 @@ const ResidentView: React.FC<ResidentViewProps> = ({
     };
   }, []);
 
-  // Urgent Booking State
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [bookingConfirmed, setBookingConfirmed] = useState(false);
   const [nextSessionDisplay, setNextSessionDisplay] = useState('');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-      setNextSessionDisplay(getNextSessionDate(mpsSchedule));
-  }, [mpsSchedule]);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isProcessing]);
+  useEffect(() => { setNextSessionDisplay(getNextSessionDate(mpsSchedule)); }, [mpsSchedule]);
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, isProcessing]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
@@ -170,7 +156,10 @@ const ResidentView: React.FC<ResidentViewProps> = ({
     setIsProcessing(true);
 
     try {
-      let responseText = await sendMessage(
+      // LLM08 fix: isUrgent is a server-authorised boolean from the proxy,
+      // not a client-parsed text tag. Spoofing ||URGENT_BOOKING|| in user
+      // input has no effect — the proxy strips it from input before Ollama sees it.
+      const { text: responseText, isUrgent } = await sendMessage(
           messages,
           sentText + (sentFile ? " [Image Attached]" : ""),
           mpName,
@@ -179,10 +168,7 @@ const ResidentView: React.FC<ResidentViewProps> = ({
           sentFile ? [sentFile] : undefined
       );
 
-      if (responseText.includes("||URGENT_BOOKING||")) {
-          setShowBookingModal(true);
-          responseText = responseText.replace("||URGENT_BOOKING||", "").trim();
-      }
+      if (isUrgent) setShowBookingModal(true);
 
       const botMsg: Message = {
         id: (Date.now() + 1).toString(),
@@ -192,7 +178,6 @@ const ResidentView: React.FC<ResidentViewProps> = ({
       };
 
       setMessages(prev => [...prev, botMsg]);
-      // Speak AI response if voice mode is on
       playResponse(responseText);
     } catch (error) {
       console.error(error);
@@ -218,12 +203,9 @@ const ResidentView: React.FC<ResidentViewProps> = ({
 
   return (
     <div className="flex flex-col h-full bg-white rounded-xl shadow-2xl overflow-hidden relative">
-      {/* Header */}
       <div className="bg-slate-700 text-white p-4 flex justify-between items-center shadow-md z-10">
         <div className="flex items-center gap-3">
-            <div className="bg-white/10 p-2 rounded-xl">
-                <Bot size={22} className="text-white" />
-            </div>
+            <div className="bg-white/10 p-2 rounded-xl"><Bot size={22} className="text-white" /></div>
             <div>
                 <h2 className="font-bold text-lg leading-tight">MPS Connect</h2>
                 <div className="flex flex-col">
@@ -232,20 +214,13 @@ const ResidentView: React.FC<ResidentViewProps> = ({
                 </div>
             </div>
         </div>
-        {/* Persistent AI disclosure badge */}
         <div className="flex items-center gap-1.5 bg-amber-400/20 border border-amber-400/40 px-2.5 py-1 rounded-full text-amber-300 text-[10px] font-bold uppercase tracking-wide">
             <Bot size={11} /> AI Assistant
         </div>
         <div className="flex items-center gap-2">
-            {/* TTS toggle */}
-            <button
-              id="tts-toggle-btn"
-              onClick={() => setVoiceEnabled(v => !v)}
+            <button id="tts-toggle-btn" onClick={() => setVoiceEnabled(v => !v)}
               title={voiceEnabled ? 'Voice output ON — click to mute' : 'Voice output OFF — click to enable'}
-              className={`p-1.5 rounded-full transition-colors ${
-                voiceEnabled ? 'bg-white/20 text-white' : 'bg-red-800/50 text-red-300'
-              }`}
-            >
+              className={`p-1.5 rounded-full transition-colors ${voiceEnabled ? 'bg-white/20 text-white' : 'bg-red-800/50 text-red-300'}`}>
               {voiceEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
             </button>
             <div className="flex items-center gap-1 bg-red-700 px-3 py-1.5 rounded-full text-xs border border-red-500">
@@ -254,7 +229,6 @@ const ResidentView: React.FC<ResidentViewProps> = ({
         </div>
       </div>
 
-      {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50">
         {messages.map((msg) => (
           <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -276,7 +250,6 @@ const ResidentView: React.FC<ResidentViewProps> = ({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input */}
       <div className="bg-white p-4 border-t border-gray-200">
         {file && (
             <div className="relative mb-3 w-fit">
@@ -288,68 +261,40 @@ const ResidentView: React.FC<ResidentViewProps> = ({
                 <button onClick={() => setFile(null)} className="absolute -top-2 -right-2 bg-gray-900 text-white p-1 rounded-full"><X size={12} /></button>
             </div>
         )}
-
         <div className="flex items-center gap-2">
-            {/* File attachment */}
             <label className="p-2 hover:bg-gray-100 rounded-full cursor-pointer">
                 <input type="file" accept="image/*,.pdf" className="hidden" onChange={handleFileChange} />
                 <Paperclip size={20} className="text-gray-500" />
             </label>
-            {/* Microphone — STT */}
-            <button
-              id="mic-btn"
-              onMouseDown={startRecording}
-              onMouseUp={stopRecording}
-              onTouchStart={startRecording}
-              onTouchEnd={stopRecording}
-              disabled={isProcessing || isTranscribing}
-              title={isRecording ? 'Release to transcribe' : 'Hold to speak'}
-              className={`p-2 rounded-full transition-all ${
-                isRecording
-                  ? 'bg-red-600 text-white animate-pulse shadow-lg shadow-red-200'
-                  : isTranscribing
-                  ? 'bg-amber-100 text-amber-600 animate-pulse'
-                  : 'hover:bg-gray-100 text-gray-500'
-              }`}
-            >
+            <button id="mic-btn" onMouseDown={startRecording} onMouseUp={stopRecording}
+              onTouchStart={startRecording} onTouchEnd={stopRecording}
+              disabled={isProcessing || isTranscribing} title={isRecording ? 'Release to transcribe' : 'Hold to speak'}
+              className={`p-2 rounded-full transition-all ${isRecording ? 'bg-red-600 text-white animate-pulse shadow-lg shadow-red-200' : isTranscribing ? 'bg-amber-100 text-amber-600 animate-pulse' : 'hover:bg-gray-100 text-gray-500'}`}>
               {isTranscribing ? <Loader2 size={20} className="animate-spin" /> : isRecording ? <MicOff size={20} /> : <Mic size={20} />}
             </button>
-
-            <input
-                type="text"
-                value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
+            <input type="text" value={inputText} onChange={(e) => setInputText(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                 placeholder="Type your concern in any language..."
-                className="flex-1 bg-gray-50 border border-gray-300 rounded-full px-4 py-2 focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors"
-            />
-
-            <button
-                onClick={handleSend}
-                disabled={!inputText.trim() && !file}
-                className="bg-red-600 text-white p-2 rounded-full hover:bg-red-700 disabled:opacity-50 transition-colors"
-            >
+                className="flex-1 bg-gray-50 border border-gray-300 rounded-full px-4 py-2 focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors" />
+            <button onClick={handleSend} disabled={!inputText.trim() && !file}
+                className="bg-red-600 text-white p-2 rounded-full hover:bg-red-700 disabled:opacity-50 transition-colors">
                 <Send size={20} />
             </button>
         </div>
-
         <div className="mt-2 flex justify-between items-center">
             <p className="text-[10px] text-gray-400">Supports English · 中文 · Bahasa · தமிழ் · Singlish</p>
             <button onClick={() => onCompleteSession(messages)} className="text-xs font-bold text-blue-600 hover:underline px-2 py-1">Complete & Submit Case</button>
         </div>
       </div>
 
-      {/* Urgent Booking Modal */}
+      {/* Urgent Booking Modal — server-gated via isUrgent flag (LLM08 compliant) */}
       {showBookingModal && (
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4 animate-in fade-in duration-300">
               <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden">
                   {!bookingConfirmed ? (
                     <>
                         <div className="bg-red-600 p-4 text-white">
-                            <h3 className="font-bold text-lg flex items-center gap-2">
-                                <Sparkles className="animate-pulse" size={20} />
-                                Priority Queue Activated
-                            </h3>
+                            <h3 className="font-bold text-lg flex items-center gap-2"><Sparkles className="animate-pulse" size={20} />Priority Queue Activated</h3>
                             <p className="text-red-100 text-xs mt-1">We've routed you to your nearest MPS branch.</p>
                         </div>
                         <div className="p-6">
@@ -378,9 +323,7 @@ const ResidentView: React.FC<ResidentViewProps> = ({
                     </>
                   ) : (
                     <div className="p-8 text-center">
-                        <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4 text-green-600">
-                            <CheckCircle2 size={32} />
-                        </div>
+                        <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4 text-green-600"><CheckCircle2 size={32} /></div>
                         <h3 className="font-bold text-gray-900 text-lg">Booking Confirmed</h3>
                         <p className="text-sm text-gray-500 mt-2">An SMS confirmation has been sent to your registered mobile number.</p>
                     </div>

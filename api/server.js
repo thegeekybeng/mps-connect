@@ -356,8 +356,236 @@ app.post('/api/ai/explain', async (req, res) => {
   }
 });
 
+// ── Causality Engine — inline helpers ────────────────────────
+// Ported from CWI: constants/causalityDomains.ts + agencyTemplates.ts + letterGenerator.ts
+// Domain-specific config stays inline; engine logic is self-contained.
+
+const MPS_DOMAIN = {
+  analystPersona:  'a Singapore constituency case analyst trained in civil administration',
+  inputLabel:      'MPS resident conversation transcript',
+  domains:         ['housing', 'financial', 'health', 'legal', 'family', 'employment', 'social'],
+  routingTargets:  'Known Singapore agencies: HDB (strictly tenancy/flats/rental/eviction), ' +
+    'Town Council / TC (strictly S&CC fees or estate maintenance), CPF, MSF, ComCare, ' +
+    'FSC (Family Service Centre), LAB (Legal Aid Bureau), MOH/CHAS, MOE, CDC, ' +
+    'Yellow Ribbon, MOM, ICA, SPF, NTUC/e2i, WSG (Workforce Singapore), SG Enable, IMH.',
+  foundationRules: '- Include only what is stated or strongly implied.\n' +
+    '- Do not invent facts.\n- Mark true root cause(s), not the presenting complaint.\n' +
+    '- Note hidden conditions (health, debt, family) even if framed differently.',
+  reasoningRules:  '- Every non-root node must have at least one cause.\n' +
+    '- Hidden risks: conditions not yet presenting but implied.\n' +
+    '- Confidence < 0.5 means the link is inferred; mark these.',
+  actionRules:     '- Primary routes address root causes and high-confidence nodes.\n' +
+    '- Secondary routes address intermediate nodes.\n' +
+    '- Long-term routes address hidden risks.\n' +
+    '- Respect Singapore sequencing: ComCare before FSC for financial hardship.\n' +
+    '- Never route to an agency unless a node clearly maps to their mandate.',
+};
+
+const AGENCY_TMPLS = {
+  'HDB':           { label: 'Housing & Development Board',               domains: ['housing','financial'],           ph: ['██ BLOCK/STREET ██','██ FLAT TYPE ██','██ LEASE COMMENCEMENT ██'] },
+  'Town Council':  { label: 'Town Council',                              domains: ['financial','housing'],           ph: ['██ TOWN COUNCIL ACCOUNT NO ██'] },
+  'CPF':           { label: 'Central Provident Fund Board',              domains: ['financial','employment'],        ph: ['██ CPF MEMBER ACCT ██'] },
+  'MSF':           { label: 'Ministry of Social and Family Development', domains: ['family','financial','social'],   ph: ['██ HOUSEHOLD SIZE ██','██ HOUSEHOLD INCOME ██'] },
+  'ComCare':       { label: 'ComCare',                                   domains: ['financial','family','social'],   ph: ['██ HOUSEHOLD SIZE ██','██ HOUSEHOLD INCOME ██'] },
+  'FSC':           { label: 'Family Service Centre',                     domains: ['family','social','health'],      ph: ['██ HOUSEHOLD SIZE ██'] },
+  'MOM':           { label: 'Ministry of Manpower',                      domains: ['employment','financial','legal'],ph: ['██ EMPLOYER ██','██ PASS TYPE ██'] },
+  'MOH':           { label: 'Ministry of Health',                        domains: ['health','financial'],            ph: ['██ MEDICAL CONDITION ██','██ SUBSIDY TIER ██'] },
+  'CHAS':          { label: 'Community Health Assist Scheme',            domains: ['health','financial'],            ph: ['██ MEDICAL CONDITION ██','██ SUBSIDY TIER ██'] },
+  'MOE':           { label: 'Ministry of Education',                     domains: ['family','social','financial'],   ph: ['██ SCHOOL NAME ██','██ CHILD NAME(S) ██'] },
+  'ICA':           { label: 'Immigration & Checkpoints Authority',       domains: ['legal','family'],                ph: ['██ PASSPORT/PERMIT NO ██'] },
+  'SSO':           { label: 'Social Service Office',                     domains: ['financial','social','family'],   ph: ['██ HOUSEHOLD SIZE ██','██ HOUSEHOLD INCOME ██'] },
+  'CDC':           { label: 'Community Development Council',             domains: ['social','financial','family'],   ph: [] },
+  'LAB':           { label: 'Legal Aid Bureau',                          domains: ['legal','financial'],             ph: [] },
+  'Yellow Ribbon': { label: 'Yellow Ribbon Project',                     domains: ['social','employment'],           ph: [] },
+  'SG Enable':     { label: 'SG Enable',                                 domains: ['health','social','employment'],  ph: [] },
+  'IMH':           { label: 'Institute of Mental Health',                domains: ['health','family'],               ph: ['██ MEDICAL CONDITION ██'] },
+  'NTUC/e2i':      { label: 'NTUC Employment and Employability Institute',domains: ['employment','financial'],        ph: [] },
+  'SPF':           { label: 'Singapore Police Force',                    domains: ['legal','family','social'],       ph: ['██ REPORT NO ██'] },
+};
+
+function getAgencyTmpl(agency) {
+  return AGENCY_TMPLS[agency] || { label: agency, domains: [], ph: [] };
+}
+
+function selectFacts(graph, agencyDomains, maxFacts = 5) {
+  const factTypes = ['root_cause', 'presenting_problem', 'intermediate'];
+  const scored = graph.nodes
+    .filter(n => factTypes.includes(n.type))
+    .map(node => {
+      const idx = agencyDomains.indexOf(node.domain);
+      const domainScore = idx >= 0 ? (agencyDomains.length - idx) * 10 : 0;
+      const typeScore = node.type === 'root_cause' ? 5 : node.type === 'presenting_problem' ? 3 : 1;
+      return { node, score: domainScore + typeScore + (node.confidence || 0) };
+    });
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, maxFacts).map(s => s.node.label);
+}
+
+function buildCrossRef(allRoutes, currentAgency) {
+  const others = allRoutes
+    .filter(r => r.agency !== currentAgency && (r.priority === 'primary' || r.priority === 'secondary'))
+    .map(r => r.agency);
+  return others.length > 0 ? `Concurrent letters have been sent to: ${others.join(', ')}.` : null;
+}
+
+function assembleLetter(graph, route, order, mpName, constituency, writerName) {
+  const tmpl = getAgencyTmpl(route.agency);
+  const facts = selectFacts(graph, tmpl.domains);
+  const crossRef = buildCrossRef(graph.agencyRoutes, route.agency);
+  const isUrgent = graph.urgency.overall === 'Critical' || graph.urgency.overall === 'High';
+  const today = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+
+  const lines = [
+    '══════════════════════════════════════════════',
+    '⚠️  COMPLETE ██ FIELDS BEFORE SENDING VIA GATHER  ⚠️',
+    '══════════════════════════════════════════════',
+    '',
+    `RE: Appeal — ██ RESIDENT NAME ██ (██ NRIC ██)`,
+    `MP: ${mpName || '██ MP NAME ██'}, Member of Parliament for ${constituency || '██ CONSTITUENCY ██'}`,
+    `Date: ${today}`,
+  ];
+
+  if (tmpl.ph.length > 0) {
+    lines.push('');
+    lines.push(`Agency-specific fields to complete: ${tmpl.ph.join(', ')}`);
+  }
+
+  lines.push('', `To: ${tmpl.label}`, '', 'Dear Sir/Madam,', '');
+  lines.push(`SUBJECT: ${route.specificAsk}`, '', 'FACTS:');
+  facts.forEach((fact, i) => lines.push(`${i + 1}. ${fact}`));
+  lines.push('', 'REQUEST:', route.specificAsk, '');
+
+  if (crossRef) { lines.push('CROSS-REFERRAL:', crossRef, ''); }
+  if (isUrgent)  { lines.push('Given the time-sensitive nature of this matter, I would appreciate your urgent attention.', ''); }
+
+  lines.push('Yours faithfully,', mpName || '██ MP NAME ██', `Member of Parliament for ${constituency || '██ CONSTITUENCY ██'}`);
+  if (writerName) { lines.push('', `Prepared by: ${writerName}`); }
+
+  return { agency: route.agency, agencyLabel: tmpl.label, content: lines.join('\n'), order, priority: route.priority, hasContext: false };
+}
+
+function assembleAllLetters(graph, mpName, constituency, writerName) {
+  const ordered = [...graph.agencyRoutes].sort((a, b) => {
+    const aQ = graph.documentQueue.find(d => d.agency === a.agency);
+    const bQ = graph.documentQueue.find(d => d.agency === b.agency);
+    return (aQ?.order ?? 999) - (bQ?.order ?? 999);
+  });
+  return ordered.map((route, idx) => assembleLetter(graph, route, idx + 1, mpName, constituency, writerName));
+}
+
+async function ollamaJSON(prompt, systemMsg, timeoutMs) {
+  const resp = await fetch(OLLAMA_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: AI_MODEL,
+      messages: [
+        { role: 'system', content: systemMsg },
+        { role: 'user',   content: prompt },
+      ],
+      stream: false,
+      format: 'json',
+      options: { temperature: 0.1 },
+    }),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!resp.ok) throw new Error(`Ollama ${resp.status}`);
+  const data = await resp.json();
+  const content = data.message?.content;
+  if (!content) throw new Error('Empty causality response from Ollama');
+  return JSON.parse(content);
+}
+
+// ── POST /api/ai/causality ────────────────────────────────────
+// 3-stage causality pipeline (Foundation → Reasoning → Action).
+// Returns { causalGraph, letters }. Rate: 3/min. Latency: 60–120 s.
+app.post('/api/ai/causality', async (req, res) => {
+  const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+  if (!rateLimit(ip, 3, 60_000)) return res.status(429).json({ error: 'Rate limit exceeded' });
+
+  const { conversation = [], mpName, constituency, writerName } = req.body;
+  if (!Array.isArray(conversation)) return res.status(400).json({ error: 'Invalid input' });
+
+  const transcript = conversation.slice(-30)
+    .map(m => `[${(m.role || 'user').toUpperCase()}]: ${sanitize(m.content || '', 2000)}`)
+    .join('\n');
+  if (!transcript.trim()) return res.status(400).json({ error: 'Empty transcript' });
+
+  const d = MPS_DOMAIN;
+
+  try {
+    // Stage 1+2: Foundation — entities + timeline
+    const foundation = await ollamaJSON(
+      `You are ${d.analystPersona}.\nAnalyse this ${d.inputLabel}.\n\nTRANSCRIPT:\n${transcript}\n\n` +
+      `Return a JSON object with:\n"entities": [{ "type", "name", "details", "firstMentioned" }]\n` +
+      `type: person|condition|event|agency|resource|obligation\n\n` +
+      `"timeline": [{ "date", "event", "entityRefs", "isRootCause", "currentStatus" }]\n` +
+      `currentStatus: "past"|"ongoing"|"imminent"\n\nRules:\n${d.foundationRules}`,
+      `You are ${d.analystPersona}. Extract entities and timeline. Return only valid JSON.`,
+      55_000
+    );
+
+    // Stage 3+4: Reasoning — causal graph + gaps
+    const domainEnum = d.domains.map(x => `"${x}"`).join(' | ');
+    const reasoning = await ollamaJSON(
+      `You are ${d.analystPersona}.\n\nTRANSCRIPT:\n${transcript}\n\n` +
+      `ENTITIES:\n${JSON.stringify(foundation.entities || [])}\n\n` +
+      `TIMELINE:\n${JSON.stringify(foundation.timeline || [])}\n\n` +
+      `Return a JSON object with:\n` +
+      `"nodes": [{ "id", "label", "type", "causes", "effects", "confidence", "domain" }]\n` +
+      `type: "root_cause"|"intermediate"|"presenting_problem"|"hidden_risk"|"consequence"\n` +
+      `confidence: 0.0–1.0\ndomain: ${domainEnum}\n\n` +
+      `"gaps": [{ "description", "affectedNodeIds", "severity", "questionToAsk" }]\n` +
+      `severity: "blocking"|"important"|"nice_to_have"\n\nRules:\n${d.reasoningRules}`,
+      `You are ${d.analystPersona}. Build a causal graph and detect information gaps. Return only valid JSON.`,
+      65_000
+    );
+
+    // Stage 5+6+7: Action — urgency + routing + document queue
+    const action = await ollamaJSON(
+      `You are ${d.analystPersona}.\n\nNODES:\n${JSON.stringify(reasoning.nodes || [])}\n\n` +
+      `GAPS:\n${JSON.stringify(reasoning.gaps || [])}\n\n` +
+      `TIMELINE:\n${JSON.stringify(foundation.timeline || [])}\n\n${d.routingTargets}\n\n` +
+      `Return a JSON object with:\n` +
+      `"urgency": { "overall", "rationale", "timeSensitiveFactors", "criticalPathNodeIds" }\n` +
+      `overall: "Low"|"Medium"|"High"|"Critical"\n\n` +
+      `"agencyRoutes": [{ "agency", "priority", "addressesNodeIds", "specificAsk", "estimatedProcessingDays", "prerequisiteAgencies" }]\n` +
+      `priority: "primary"|"secondary"|"long_term"\n\n` +
+      `"documentQueue": [{ "order", "type", "agency", "subject", "urgency", "dependsOn" }]\n` +
+      `type: "letter"|"referral"|"internal_note"|"follow_up"\n\nRules:\n${d.actionRules}`,
+      `You are ${d.analystPersona}. Score urgency and route to agencies. Return only valid JSON.`,
+      65_000
+    );
+
+    const causalGraph = {
+      entities:      foundation.entities      || [],
+      timeline:      foundation.timeline      || [],
+      nodes:         reasoning.nodes          || [],
+      gaps:          reasoning.gaps           || [],
+      urgency:       action.urgency           || { overall: 'Low', rationale: '', timeSensitiveFactors: [], criticalPathNodeIds: [] },
+      agencyRoutes:  action.agencyRoutes      || [],
+      documentQueue: action.documentQueue     || [],
+      engineVersion: '2.2.0-mps',
+      processedAt:   new Date().toISOString(),
+    };
+
+    const safeMP    = sanitize(mpName       || '', 100);
+    const safeCons  = sanitize(constituency || '', 100);
+    const safeWriter= sanitize(writerName   || '', 100);
+    const letters   = assembleAllLetters(causalGraph, safeMP, safeCons, safeWriter);
+
+    auditLog('CAUSALITY', { nodes: causalGraph.nodes.length, routes: causalGraph.agencyRoutes.length, letters: letters.length, urgency: causalGraph.urgency.overall });
+    res.json({ causalGraph, letters });
+
+  } catch (err) {
+    auditLog('ERROR_CAUSALITY', { msg: err.message });
+    res.status(503).json({ error: 'AI service temporarily unavailable' });
+  }
+});
+
 // ── Health ────────────────────────────────────────────────────
 app.get('/health', (_, res) => res.json({ status: 'ok', service: 'mps-ai-proxy' }));
+
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(JSON.stringify({ ts: new Date().toISOString(), event: 'MPS_AI_PROXY_START', port: PORT }));

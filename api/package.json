@@ -1,0 +1,15 @@
+{
+  "name": "mps-ai-proxy",
+  "version": "1.0.0",
+  "description": "Server-side AI proxy for MPS Connect — system prompt never leaves this container",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

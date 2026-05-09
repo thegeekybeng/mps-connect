@@ -1,0 +1,50 @@
+name: Security Audit
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 18 * * 0'   # Weekly Sunday 02:00 SGT (18:00 UTC Sunday)
+
+jobs:
+  npm-audit:
+    name: Dependency Vulnerability Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run npm audit (high severity)
+        run: npm audit --audit-level=high
+
+      - name: Check for known OWASP critical packages
+        run: |
+          echo "Checking for packages with known critical CVEs..."
+          npm audit --json | jq '.vulnerabilities | to_entries[] | select(.value.severity == "critical") | .key' || true
+
+  api-audit:
+    name: AI Proxy Dependency Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install API proxy dependencies
+        run: cd api && npm install
+
+      - name: Run npm audit on API proxy
+        run: cd api && npm audit --audit-level=high

@@ -1,8 +1,9 @@
 
 import React, { useState } from 'react';
-import { Case, CaseStatus, Urgency, UserRole, CaseNote } from '../types';
-import { generateFormalLetter, explainAIReasoning } from '../services/aiService';
-import { ArrowLeft, Wand2, FileText, Info, Clock, ShieldCheck, UserCheck, Send, Plus, X, Target, CheckCircle2, Sparkles, Filter, Calendar, ArrowDownUp, RotateCcw, StickyNote, User, MapPin } from 'lucide-react';
+import { Case, CaseStatus, Urgency, UserRole, CaseNote, CausalGraph, GeneratedLetter } from '../types';
+import { generateFormalLetter, explainAIReasoning, runCausalityEngine } from '../services/aiService';
+import { ArrowLeft, Wand2, FileText, Info, Clock, ShieldCheck, UserCheck, Send, Plus, X, Target, CheckCircle2, Sparkles, Filter, Calendar, ArrowDownUp, RotateCcw, StickyNote, User, MapPin, BrainCircuit, Loader2, Circle, CheckCircle, Copy, ClipboardCheck, AlertCircle } from 'lucide-react';
+
 
 interface CaseDetailProps {
   caseData: Case;
@@ -12,7 +13,8 @@ interface CaseDetailProps {
 }
 
 const CaseDetail: React.FC<CaseDetailProps> = ({ caseData, onBack, onUpdate, userRole }) => {
-  const [activeTab, setActiveTab] = useState<'details' | 'draft' | 'chat' | 'history' | 'notes'>('details');
+  const [activeTab, setActiveTab] = useState<'details' | 'draft' | 'chat' | 'history' | 'notes' | 'intelligence'>('details');
+
   const [letterDraft, setLetterDraft] = useState(caseData.generatedLetter || '');
   const [isGenerating, setIsGenerating] = useState(false);
   const [explanation, setExplanation] = useState<string | null>(null);
@@ -26,6 +28,15 @@ const CaseDetail: React.FC<CaseDetailProps> = ({ caseData, onBack, onUpdate, use
   const [historyStartDate, setHistoryStartDate] = useState<string>('');
   const [historyEndDate, setHistoryEndDate] = useState<string>('');
   const [historySortDesc, setHistorySortDesc] = useState<boolean>(true);
+
+  // Case Writer Intelligence state
+  const [causalGraph, setCausalGraph] = useState<CausalGraph | null>(null);
+  const [isEngineRunning, setIsEngineRunning] = useState(false);
+  const [engineStageIdx, setEngineStageIdx] = useState(-1);
+  const [generatedLetters, setGeneratedLetters] = useState<GeneratedLetter[]>([]);
+  const [selectedLetterAgency, setSelectedLetterAgency] = useState<string>('');
+  const [copiedAgency, setCopiedAgency] = useState<string>('');
+
 
   const requiredApprovals = (caseData.urgency === Urgency.CRITICAL || caseData.urgency === Urgency.HIGH) ? 2 : 1;
   const approvalProgress = Math.min((caseData.approvals.length / requiredApprovals) * 100, 100);
@@ -102,6 +113,42 @@ const CaseDetail: React.FC<CaseDetailProps> = ({ caseData, onBack, onUpdate, use
       );
       setExplanation(reason);
   };
+
+  const handleRunCausalityEngine = async () => {
+    setIsEngineRunning(true);
+    setCausalGraph(null);
+    setGeneratedLetters([]);
+    setSelectedLetterAgency('');
+    setEngineStageIdx(0);
+    // Advance stage indicator every 45 s so the user knows it's working
+    const stageTimer = setInterval(() => setEngineStageIdx(i => Math.min(i + 1, 2)), 45_000);
+    try {
+      const result = await runCausalityEngine(
+        caseData.messages,
+        caseData.mpName,
+        caseData.constituency,
+      );
+      setCausalGraph(result.causalGraph);
+      setGeneratedLetters(result.letters || []);
+      if (result.letters?.length) setSelectedLetterAgency(result.letters[0].agency);
+      onUpdate({ ...caseData, history: [...caseData.history, { timestamp: new Date(), action: 'Case Writer Intelligence analysis completed', user: `${getRoleDisplayName()} (You)` }] });
+    } catch (err: any) {
+      alert(`Intelligence analysis failed: ${err.message}`);
+    } finally {
+      clearInterval(stageTimer);
+      setIsEngineRunning(false);
+      setEngineStageIdx(-1);
+    }
+  };
+
+  const handleCopyToGather = (agency: string) => {
+    const letter = generatedLetters.find(l => l.agency === agency);
+    if (!letter) return;
+    navigator.clipboard.writeText(letter.content);
+    setCopiedAgency(agency);
+    setTimeout(() => setCopiedAgency(''), 2500);
+  };
+
 
   const handleAddAgency = () => {
     if (newAgencyInput.trim()) {
@@ -290,32 +337,41 @@ const CaseDetail: React.FC<CaseDetailProps> = ({ caseData, onBack, onUpdate, use
         >
             Case Details
         </button>
-        <button 
+        <button
+            onClick={() => setActiveTab('intelligence')}
+            className={`py-3 px-4 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'intelligence' ? 'border-purple-600 text-purple-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+        >
+            <BrainCircuit size={15} />
+            Case Intelligence
+            {generatedLetters.length > 0 && <span className="bg-purple-100 text-purple-700 text-[10px] font-bold px-1.5 py-0.5 rounded-full">{generatedLetters.length}</span>}
+        </button>
+        <button
             onClick={() => setActiveTab('chat')}
             className={`py-3 px-4 text-sm font-medium border-b-2 transition-colors ${activeTab === 'chat' ? 'border-red-500 text-red-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
         >
             Transcript
         </button>
-        <button 
+        <button
             onClick={() => setActiveTab('draft')}
             className={`py-3 px-4 text-sm font-medium border-b-2 transition-colors ${activeTab === 'draft' ? 'border-red-500 text-red-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
         >
             Appeal Letter
         </button>
-        <button 
+        <button
             onClick={() => setActiveTab('history')}
             className={`py-3 px-4 text-sm font-medium border-b-2 transition-colors ${activeTab === 'history' ? 'border-red-500 text-red-600' : 'border-transparent text-gray-500 hover:text-gray-700'} flex items-center gap-2`}
         >
             <Clock size={16} />
             History
         </button>
-        <button 
+        <button
             onClick={() => setActiveTab('notes')}
             className={`py-3 px-4 text-sm font-medium border-b-2 transition-colors ${activeTab === 'notes' ? 'border-red-500 text-red-600' : 'border-transparent text-gray-500 hover:text-gray-700'} flex items-center gap-2`}
         >
             <StickyNote size={16} />
             Private Notes
         </button>
+
       </div>
 
       {/* Content */}
@@ -672,6 +728,202 @@ const CaseDetail: React.FC<CaseDetailProps> = ({ caseData, onBack, onUpdate, use
                 </div>
             </div>
         )}
+
+        {/* ── Case Writer Intelligence tab ─────────────────── */}
+        {activeTab === 'intelligence' && (
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
+
+            {/* Header */}
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-purple-100 rounded-lg"><BrainCircuit className="text-purple-700" size={20} /></div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">Case Writer Intelligence</h3>
+                  <p className="text-xs text-gray-500">3-stage causality analysis · MPS Singapore · gemma4:e2b</p>
+                </div>
+              </div>
+              {!isEngineRunning && (
+                <button onClick={handleRunCausalityEngine}
+                  disabled={caseData.messages.length === 0}
+                  className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-bold hover:bg-purple-700 transition-colors disabled:opacity-50 shadow-sm">
+                  <BrainCircuit size={16} />
+                  {causalGraph ? 'Re-run Analysis' : 'Run Analysis'}
+                </button>
+              )}
+            </div>
+
+            {/* Running state */}
+            {isEngineRunning && (
+              <div className="bg-white rounded-xl border border-purple-100 shadow-sm p-8 mb-6">
+                <p className="text-sm font-semibold text-purple-700 mb-6">Analysing case transcript… this takes 60–120 seconds.</p>
+                {[['foundation','Extracting entities & building timeline'],['reasoning','Constructing causal graph & detecting gaps'],['action','Scoring urgency & routing to agencies']].map(([key, label], i) => (
+                  <div key={key} className={`flex items-center gap-3 py-2.5 px-3 rounded-lg mb-1 ${engineStageIdx === i ? 'bg-purple-50' : ''}`}>
+                    {engineStageIdx > i  ? <CheckCircle size={16} className="text-green-500 shrink-0" /> :
+                     engineStageIdx === i ? <Loader2 size={16} className="text-purple-500 animate-spin shrink-0" /> :
+                                           <Circle size={16} className="text-gray-300 shrink-0" />}
+                    <span className={`text-sm font-medium ${engineStageIdx > i ? 'text-green-700' : engineStageIdx === i ? 'text-purple-700' : 'text-gray-400'}`}>{label}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Results — split panel */}
+            {causalGraph && !isEngineRunning && (
+              <div className="grid grid-cols-2 gap-6">
+
+                {/* LEFT: Case Reasoning */}
+                <div className="space-y-4">
+
+                  {/* Urgency */}
+                  <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+                    <label className="block text-[10px] font-bold text-gray-400 uppercase mb-2">Overall Urgency</label>
+                    <div className="flex items-start gap-3">
+                      <span className={`text-xs font-bold px-2.5 py-1 rounded-full border shrink-0 ${
+                        causalGraph.urgency.overall === 'Critical' ? 'bg-red-100 text-red-800 border-red-200' :
+                        causalGraph.urgency.overall === 'High'     ? 'bg-orange-100 text-orange-800 border-orange-200' :
+                        causalGraph.urgency.overall === 'Medium'   ? 'bg-yellow-100 text-yellow-800 border-yellow-200' :
+                                                                      'bg-green-100 text-green-800 border-green-200'}`}>
+                        {causalGraph.urgency.overall}
+                      </span>
+                      <p className="text-xs text-gray-600 leading-relaxed">{causalGraph.urgency.rationale}</p>
+                    </div>
+                  </div>
+
+                  {/* Root causes */}
+                  {causalGraph.nodes.filter(n => n.type === 'root_cause').length > 0 && (
+                    <div className="bg-white rounded-xl border border-red-100 shadow-sm p-5">
+                      <label className="block text-[10px] font-bold text-red-500 uppercase mb-2">Root Causes</label>
+                      <ul className="space-y-1.5">
+                        {causalGraph.nodes.filter(n => n.type === 'root_cause').map(n => (
+                          <li key={n.id} className="flex items-start gap-2 text-sm text-gray-800 bg-red-50 p-2 rounded border border-red-100">
+                            <span className="text-red-400 shrink-0 mt-0.5">▶</span>{n.label}
+                            <span className="ml-auto text-[10px] text-gray-400 shrink-0">{Math.round(n.confidence * 100)}%</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Hidden risks */}
+                  {causalGraph.nodes.filter(n => n.type === 'hidden_risk').length > 0 && (
+                    <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Hidden Risks</label>
+                      <ul className="space-y-1.5">
+                        {causalGraph.nodes.filter(n => n.type === 'hidden_risk').map(n => (
+                          <li key={n.id} className="flex items-start gap-2 text-sm text-slate-700 bg-slate-50 p-2 rounded border border-slate-100">
+                            <span className="text-slate-400 shrink-0 mt-0.5">⚠</span>{n.label}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Blocking gaps */}
+                  {causalGraph.gaps.filter(g => g.severity === 'blocking').length > 0 && (
+                    <div className="bg-white rounded-xl border border-amber-100 shadow-sm p-5">
+                      <label className="block text-[10px] font-bold text-amber-600 uppercase mb-2">Ask Resident</label>
+                      <ul className="space-y-1.5">
+                        {causalGraph.gaps.filter(g => g.severity === 'blocking').map((g, i) => (
+                          <li key={i} className="flex items-start gap-2 text-sm text-amber-800 bg-amber-50 p-2 rounded border border-amber-100">
+                            <AlertCircle size={13} className="text-amber-500 shrink-0 mt-0.5" />{g.questionToAsk}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Agency routes */}
+                  {causalGraph.agencyRoutes.length > 0 && (
+                    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+                      <label className="block text-[10px] font-bold text-gray-400 uppercase mb-2">Agency Routing</label>
+                      <div className="space-y-1.5">
+                        {causalGraph.agencyRoutes.map(r => (
+                          <div key={r.agency} className={`flex items-center justify-between p-2 rounded border text-xs ${
+                            r.priority === 'primary'   ? 'bg-red-50 border-red-200 text-red-700' :
+                            r.priority === 'secondary' ? 'bg-blue-50 border-blue-200 text-blue-700' :
+                                                          'bg-gray-50 border-gray-200 text-gray-600'}`}>
+                            <span className="font-bold">{r.agency}</span>
+                            <span className="opacity-70 capitalize">{r.priority.replace('_',' ')}</span>
+                            <span className="opacity-60">{r.estimatedProcessingDays}d</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* RIGHT: Letters */}
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col overflow-hidden" style={{maxHeight:'70vh'}}>
+                  {generatedLetters.length === 0 ? (
+                    <div className="flex-1 flex items-center justify-center text-gray-400 text-sm p-8 text-center">
+                      No agency routes identified — cannot generate letters.
+                    </div>
+                  ) : (
+                    <>
+                      {/* Letter tabs */}
+                      <div className="p-3 border-b border-gray-100 bg-gray-50 flex flex-wrap gap-1.5">
+                        {generatedLetters.map(letter => (
+                          <button key={letter.agency} onClick={() => setSelectedLetterAgency(letter.agency)}
+                            className={`text-xs px-3 py-1.5 rounded-full border font-medium transition-colors ${
+                              selectedLetterAgency === letter.agency
+                                ? 'bg-purple-600 text-white border-purple-600 shadow-sm'
+                                : 'bg-white text-purple-700 border-purple-200 hover:bg-purple-50'}`}>
+                            {letter.agency}
+                            <span className="ml-1 text-[9px] opacity-70 capitalize">{letter.priority.replace('_',' ')}</span>
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Letter content */}
+                      {(() => {
+                        const active = generatedLetters.find(l => l.agency === selectedLetterAgency);
+                        if (!active) return <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">Select an agency above</div>;
+                        return (
+                          <>
+                            <textarea className="flex-1 p-4 resize-none focus:outline-none text-sm text-gray-800 font-mono leading-relaxed"
+                              value={active.content}
+                              onChange={e => setGeneratedLetters(prev => prev.map(l => l.agency === selectedLetterAgency ? { ...l, content: e.target.value } : l))}
+                            />
+                            <div className="p-3 border-t border-gray-100 bg-gray-50 space-y-2">
+                              <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg p-2">
+                                <BrainCircuit size={12} className="text-amber-600 shrink-0 mt-0.5" />
+                                <p className="text-[10px] text-amber-800 leading-relaxed">
+                                  <strong>AI-Generated.</strong> Review all ██ fields and verify facts before sending via gather.gov.sg.
+                                </p>
+                              </div>
+                              <div className="flex justify-between items-center">
+                                <p className="text-[10px] text-gray-400">{active.agencyLabel} · {active.content.length} chars</p>
+                                <button onClick={() => handleCopyToGather(selectedLetterAgency)}
+                                  className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                                    copiedAgency === selectedLetterAgency
+                                      ? 'bg-green-100 text-green-700 border border-green-200'
+                                      : 'bg-purple-600 hover:bg-purple-700 text-white'}`}>
+                                  {copiedAgency === selectedLetterAgency
+                                    ? <><ClipboardCheck size={12} /> Copied — fill ██ fields!</>
+                                    : <><Copy size={12} /> Copy to Gather</>}
+                                </button>
+                              </div>
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Empty state */}
+            {!causalGraph && !isEngineRunning && (
+              <div className="text-center py-20 text-gray-400 bg-white rounded-xl border border-dashed border-gray-200">
+                <BrainCircuit size={40} className="mx-auto mb-4 opacity-20" />
+                <p className="text-sm font-medium">Run Analysis to surface root causes, hidden risks, and generate agency-specific letters.</p>
+                <p className="text-xs mt-1 opacity-70">Uses the causality engine from Case Writer Intelligence · 60–120 s</p>
+              </div>
+            )}
+          </div>
+        )}
+
       </div>
     </div>
   );

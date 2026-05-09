@@ -7,7 +7,7 @@ export default defineConfig(({ mode }) => {
   // Resolve model — env var takes precedence over vite.config default
   const ollamaModel = process.env.VITE_OLLAMA_MODEL
     || env.VITE_OLLAMA_MODEL
-    || 'aisingapore/gemma-sea-lion-v4-27b-it';
+    || 'gemma4:e2b';
 
   const ollamaTarget = process.env.OLLAMA_TARGET
     || env.OLLAMA_TARGET
