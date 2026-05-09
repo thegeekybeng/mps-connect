@@ -12,6 +12,29 @@ const OLLAMA_BASE  = (import.meta.env.VITE_OLLAMA_HOST  || '/ollama-api');
 const SPEECH_BASE  = (import.meta.env.VITE_SPEECH_HOST  || '/ai-speech');
 const MODEL        = (import.meta.env.VITE_OLLAMA_MODEL || 'gemma4:e2b');
 
+// --- PROMPT INJECTION DEFENCE ---
+const INJECTION_PATTERNS = [
+  /ignore\s+(all\s+)?(previous\s+)?instructions?/gi,
+  /disregard\s+(all\s+)?(previous\s+)?instructions?/gi,
+  /forget\s+(all\s+)?(previous\s+)?instructions?/gi,
+  /override\s+(system\s+)?instructions?/gi,
+  /you\s+are\s+now\s+/gi,
+  /new\s+system\s+prompt\s*:/gi,
+  /<<\/?SYS>>/g,
+  /\[INST\]|\[\/INST\]/g,
+  /<\/?system>/gi,
+  /act\s+as\s+(if\s+you\s+are|an?\s+)/gi,
+  // PI-01: Strip URGENT_BOOKING tag from user input to prevent spoofing
+  /\|\|URGENT_BOOKING\|\|/g,
+];
+const MAX_USER_CHARS = 2000;
+function sanitizePromptInput(text: string): string {
+  if (!text || typeof text !== 'string') return '';
+  let s = text.slice(0, MAX_USER_CHARS);
+  for (const p of INJECTION_PATTERNS) s = s.replace(p, '[FILTERED]');
+  return s;
+}
+
 // ── STT ──────────────────────────────────────────────────────
 /**
  * Send a recorded audio Blob to the Wyoming bridge and get back transcribed text.
@@ -92,14 +115,16 @@ export const sendMessage = async (
 
     const messages: any[] = [
       { role: 'system', content: systemInstruction },
-      ...history.map(h => ({ role: normalizeRole(h.role), content: h.content })),
+      // PI-05: sanitize history to prevent conversation poisoning from earlier turns
+      ...history.map(h => ({ role: normalizeRole(h.role), content: sanitizePromptInput(h.content) })),
     ];
 
     // Compose user content — text + optional images (gemma4 is vision-capable)
     const userContent: any[] = [];
 
     if (newMessage.trim()) {
-      userContent.push({ type: 'text', text: newMessage });
+      // PI-06: sanitize user message before embedding in prompt
+      userContent.push({ type: 'text', text: sanitizePromptInput(newMessage) });
     }
 
     // Inline images as base64 (gemma4:e2b supports vision)
@@ -139,7 +164,8 @@ export const sendMessage = async (
 // ── 2. Case Analysis & Categorization ───────────────────────
 export const analyzeAndCategorizeCase = async (conversation: Message[]): Promise<CategorizationResult> => {
   const transcript = conversation
-    .map(m => `[${m.role.toUpperCase()}]: ${m.content}`)
+    // PI-05: sanitize each turn before embedding in analysis prompt
+    .map(m => `[${m.role.toUpperCase()}]: ${sanitizePromptInput(m.content)}`)
     .join('\n');
 
   const prompt = `Analyze this MPS (Member of Parliament Session) conversation transcript and return ONLY a JSON object.
@@ -199,13 +225,19 @@ Return a JSON object with EXACTLY these fields:
 // ── 4. Formal Letter Generation ──────────────────────────────
 export const generateFormalLetter = async (caseData: Case): Promise<string> => {
   try {
+    // PI-04: sanitize AI-generated intermediary data before reuse in subsequent prompt
+    const safeName = sanitizePromptInput(caseData.residentName || '').slice(0, 100);
+    const safeRequest = sanitizePromptInput(caseData.coreRequest || '').slice(0, 500);
+    const safeFacts = (caseData.keyFacts || []).map(f => sanitizePromptInput(f).slice(0, 200)).join('; ');
+    const safeAgencies = (caseData.suggestedAgencies || []).map(a => sanitizePromptInput(a).slice(0, 50)).join(', ');
+
     const prompt = `Draft a formal appeal letter on behalf of ${caseData.mpName} to the relevant Singapore government agency.
 
-Resident: ${caseData.residentName} (NRIC: ${caseData.nricMasked})
+Resident: ${safeName} (NRIC: ${caseData.nricMasked})
 Constituency: ${caseData.constituency}
-Core Request: ${caseData.coreRequest}
-Key Facts: ${caseData.keyFacts?.join('; ')}
-Suggested Agencies: ${caseData.suggestedAgencies?.join(', ')}
+Core Request: ${safeRequest}
+Key Facts: ${safeFacts}
+Suggested Agencies: ${safeAgencies}
 Date: ${new Date().toLocaleDateString('en-SG', { day: 'numeric', month: 'long', year: 'numeric' })}
 
 Write a professional, empathetic letter. Use formal Singaporean government correspondence style. Sign off as ${caseData.mpName}.`;
@@ -237,7 +269,7 @@ export const explainAIReasoning = async (context: string, urgency: string): Prom
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: MODEL,
-        messages: [{ role: 'user', content: `Explain in 2-3 sentences why this resident case is classified as ${urgency} urgency: ${context}` }],
+        messages: [{ role: 'user', content: `Explain in 2-3 sentences why this resident case is classified as ${sanitizePromptInput(urgency)} urgency: ${sanitizePromptInput(context).slice(0, 500)}` }],
         stream: false,
         options: { temperature: 0.4 },
       }),
