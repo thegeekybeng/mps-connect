@@ -22,9 +22,15 @@ Staff get a unified dashboard with all incoming cases. Pre-session triage is don
 - AI-assisted intake in natural language (English, Mandarin, Malay, Tamil, Singlish)
 - Automatic case categorisation and urgency classification
 - Urgent case flagging — enabling immediate action before the next physical session
-- Staff dashboard with full case view and case history
+- **Branch locator and MP identifier** — routes each resident to the correct MP branch and session schedule based on their postal code, mapped against the full 97-branch post-GE2025 constituency registry
+- Staff dashboard with full case view, case history, and document management
 - Consent gate before any AI interaction (privacy and demo disclosure)
 - Reference number per submission — no lost cases
+- **Case Writer Intelligence panel** — 3-stage causality engine (Foundation → Reasoning → Action) producing a structured `CausalGraph`: urgency assessment, root cause identification, hidden risk detection, information gap analysis, and agency routing with confidence scoring per causal node
+- **Multi-agency correspondence** — per-agency appeal letters generated deterministically from the `CausalGraph`; each letter is domain-weighted, agency-specific, sequenced by the document queue, and PDPA-compliant (resident PII held as `██` placeholders, completed by the writer inside gather.gov.sg)
+- **Copy to Gather bridge** — letters copied to clipboard for submission via gather.gov.sg; governance gate holds the copy action until MP or administrator approval is granted
+- Human-in-the-loop governance — five mandatory review gates ensuring no AI decision reaches formal correspondence without verified human sign-off
+- Immutable audit trail — cryptographically chained case event log with SLA tracking per agency; distinguishes automated receipt acknowledgement (`AGY-RCV`) from substantive response (`AGY-RSP`)
 
 ## Tech stack
 
@@ -326,169 +332,8 @@ Staff access is gated by an environment-variable access code. Do not use a weak 
 
 ---
 
-## Future Development
+## Roadmap
 
-### Structured Constituency Routing
-
-The current implementation maps postal sector prefixes (first two digits of a six-digit postal code) to constituency data using a client-side lookup table in the frontend bundle. This approach has two fundamental problems.
-
-**Problem 1 — Postal sector prefixes are not reliable constituency boundary markers.**
-A single two-digit prefix can plausibly span multiple GRC divisions or branches. Singapore's electoral boundaries follow planning area and street-level boundaries, not postal sector lines. A resident at postal code 32XXXX may belong to a different division than their neighbour at 32YYYY. The prefix cannot be the definitive routing key.
-
-**Problem 2 — The data is incomplete, client-side, and not GE-resilient.**
-Singapore's GE2025 (3 May 2025) returned 97 elected MPs, each serving one branch. A 4-member GRC has 4 branches within it — one per MP. The current mapping covers a subset of postal sectors, does not reflect post-GE2025 assignments, and requires a frontend rebuild to update after any General Election.
-
----
-
-**Planned build — two phases:**
-
-#### Phase 1 — Branch registry (lower complexity, do once)
-
-Compile a complete, verified server-side registry of all 97 branches. Branch addresses are stable and rarely change outside of a GE or PAP branch restructuring. This replaces the client-side lookup entirely.
-
-Each branch record follows this schema:
-
-```json
-{
-  "branch": "Kolam Ayer",
-  "grc": "Jalan Besar GRC",
-  "division": "Kolam Ayer",
-  "mp": "Dr. Wan Rizal",
-  "primaryPostalSectors": ["33", "34"],
-  "venues": [
-    {
-      "address": "Blk XXX Kolam Ayer [full address]",
-      "schedule": "Every Monday, 7.30 PM",
-      "frequency": "weekly"
-    },
-    {
-      "address": "Blk YYY [full address]",
-      "schedule": "Every alternate Wednesday, 7.30 PM",
-      "frequency": "fortnightly"
-    }
-  ]
-}
-```
-
-The `venues` array accommodates the real-world pattern where a single branch runs split sessions — different locations on different days, with different recurrence patterns (weekly at one venue, fortnightly at another). This is not an edge case; it is a documented operational pattern across multiple branches.
-
-#### Phase 2 — Geocoding-based routing (medium complexity)
-
-Replace prefix matching with precise geocoding via the OneMap API (Singapore Land Authority, official, free):
-
-```text
-Resident (postal code)
-  → mps-ai-proxy: GET /api/constituency?postal={6-digit}
-    → OneMap API: postal code → lat/lng + planning area
-    → server-side branch registry: nearest branch lookup by planning area
-  ← branch record with mp, venues[], and schedules
-```
-
-OneMap resolves the postal code to a planning area and coordinates. The branch registry maps planning area → branch. This eliminates the prefix ambiguity problem: a full six-digit postal code returns a precise planning area, which maps correctly to a branch even when two postal codes with the same prefix fall in different divisions.
-
-After each General Election: update the server-side branch registry JSON, restart the proxy. No frontend rebuild required.
-
----
-
-### Immutable Audit Infrastructure
-
-The current audit log writes structured JSON to Docker stdout. This is sufficient for real-time monitoring but fails on three counts: it is not persistent across container recreation, not queryable, and not immutable — logs can be cleared or lost.
-
-For a civic platform handling constituent data and AI interactions, the audit trail must survive deployments, support investigation, and be tamper-evident.
-
-**Planned implementation: SQLite with append-only enforcement**
-
-A volume-mounted SQLite database on `mps-ai-proxy`. No additional containers. Two tables:
-
-```sql
--- Security and AI audit events (existing console.log events, persisted)
-CREATE TABLE audit_events (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  ts          TEXT NOT NULL,
-  event_type  TEXT NOT NULL,  -- CHAT | CATEGORIZE | BLOCKED_ORIGIN | CANARY_TRIGGERED | ERROR
-  session_id  TEXT,
-  ip_hash     TEXT,
-  input_len   INTEGER,
-  output_len  INTEGER,
-  is_urgent   INTEGER,        -- 0 | 1
-  canary_det  INTEGER,        -- 0 | 1
-  detail      TEXT,           -- JSON blob for event-specific fields
-  prev_hash   TEXT NOT NULL   -- SHA-256 of previous row for chain integrity
-);
-
--- Case lifecycle events (see Case Traceability below)
-CREATE TABLE case_events (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  ts          TEXT NOT NULL,
-  case_ref    TEXT NOT NULL,
-  status_code TEXT NOT NULL,
-  actor       TEXT NOT NULL,  -- SYSTEM | MP_OFFICE | AGENCY | RESIDENT
-  note        TEXT,
-  prev_hash   TEXT NOT NULL
-);
-```
-
-The `prev_hash` column implements a cryptographic chain: each row stores the SHA-256 of the previous row's content. Any retroactive modification to any row breaks the chain and is detectable on verification. No `UPDATE` or `DELETE` is ever issued on either table by application code.
-
----
-
-### Case Traceability and Agency Accountability
-
-#### The problem this solves
-
-The MP correspondence ecosystem has an existing structured system — gather.gov.sg — that records case referrals to agencies and tracks agency responses. That system works. What it does not provide is an independent, tamper-evident record anchored to the resident's original submission timestamp.
-
-MPS-Connect's immutable audit log is a parallel, independent layer. It records when the resident submitted, when the case was referred, and when each subsequent lifecycle event occurred. These timestamps cross-reference against gather.gov.sg records. If a gather.gov.sg entry logs an automated agency acknowledgement as a substantive response, the MPS-Connect record — which tracks `AGY-RCV` and `AGY-RSP` as distinct events — surfaces that discrepancy. An agency that takes 3 months to provide a substantive response while an automated receipt acknowledgement sits in the gather.gov.sg record has no cover when both records are held side by side.
-
-#### Case number format
-
-```text
-MPS-{BRANCH}-{YYYYMM}-{PRIORITY}-{SEQ}
-Example: MPS-JBKA-202505-P1-0042
-```
-
-| Segment | Meaning | Notes |
-| --- | --- | --- |
-| `MPS` | Platform prefix | Fixed |
-| `JBKA` | Branch code (GRC + Division abbreviated) | Derived from constituency routing |
-| `202505` | Year + Month of submission | Auto-generated |
-| `P1–P4` | Case priority at intake | P1=Critical, P2=High, P3=Medium, P4=Low |
-| `0042` | Monthly sequence per branch | Zero-padded, resets per branch per month |
-
-The priority is set at intake by the AI categorisation engine, not by the resident. A P1 case number signals urgency to every downstream party from the moment it is created.
-
-#### Case lifecycle status codes
-
-| Code | Party responsible | Meaning | SLA clock |
-| --- | --- | --- | --- |
-| `SUBMITTED` | System | Resident submitted case | T0 — all clocks start |
-| `MP-ACK` | MP Office | Case reviewed and acknowledged | T1 |
-| `MP-REF` | MP Office | Referred to government agency with MP letter | T2 — agency SLA clock starts |
-| `AGY-RCV` | Agency | Automated receipt acknowledgement logged | Recorded, **does not stop agency SLA clock** |
-| `AGY-RSP` | Agency | First substantive human response received | T4 — agency first response = T4 − T2 |
-| `AGY-ACT` | Agency | Agency took action or made a decision | T5 — agency resolution = T5 − T2 |
-| `MP-FUP` | MP Office | MP office followed up with resident | T6 |
-| `RES-CLO` | MP Office / Resident | Case closed, resident informed | T7 — end-to-end = T7 − T0 |
-| `ESCALATED` | MP Office | Agency non-responsive — escalation triggered | Flags SLA breach |
-
-Every status change is written as an immutable row in `case_events`. The full chain of events for any case is queryable at any time.
-
-#### What the data enables
-
-The SLA deltas are computable directly from the timestamps:
-
-| Metric | Calculation | What it measures |
-| --- | --- | --- |
-| MP acknowledgement time | T1 − T0 | How fast the MP office picked up the case |
-| Agency intake lag | T3 − T2 | How long the agency took to acknowledge a referral |
-| Agency first response | T4 − T2 | How long to a substantive response |
-| Agency resolution time | T5 − T2 | How long to a decision or action |
-| End-to-end resolution | T7 − T0 | Total time from resident submission to close |
-
-Aggregated across cases, this produces a factual performance record per agency. The expectation for civil servants is to respond to citizen queries in a timely fashion — that is their function. MPS-Connect creates the structured, immutable record that makes it possible to measure whether that is happening, and where it is not. The MP office retains full discretion on what to do with the data. The platform's role is to ensure the data exists and is accurate.
-
-Response quality — whether agency responses contain sufficient information to actually resolve the resident's concern — is a separate dimension and a planned future addition.
-
----
+Planned development is documented in [`ROADMAP.md`](./ROADMAP.md). **Phase 1 is implemented** — causality engine, Case Writer Intelligence panel, multi-agency letter generation, Copy to Gather, and HITL governance infrastructure are all live. Phase 2 targets demand-driven document collection: the causality engine output drives a per-case document requirement checklist, replacing static upload forms. Phase 3 introduces G2G document requests to public institutions (SingHealth / NHG hospitals and polyclinics) on behalf of residents, and SingPass OIDC for high-assurance cases. Phase 4 covers continuous learning via HITL-RAG and confidence-based batch case approval. Estimated remaining build: 12–16 weeks.
 
 Built by [@thegeekybeng](https://github.com/thegeekybeng)
