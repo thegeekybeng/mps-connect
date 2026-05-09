@@ -29,7 +29,6 @@ Staff get a unified dashboard with all incoming cases. Pre-session triage is don
 ## Tech stack
 
 | Layer | Technology |
-
 | --- | --- |
 | Frontend | React + TypeScript + Vite |
 | AI proxy | Node.js + Express (server-side, internal only) |
