@@ -84,6 +84,7 @@ All AI calls route through `mps-ai-proxy` — a dedicated server-side Express co
 ### Output Handling (LLM02)
 
 `sanitizeOutput()` runs on every AI response before it reaches the browser:
+
 - All `<script>` tags stripped
 - All HTML tags stripped
 - `javascript:` → `javascript-blocked:`
@@ -134,10 +135,12 @@ The urgent booking flow previously relied on client-side text scanning for `||UR
 ### Model DoS Protection (LLM04)
 
 **Layer 1 — nginx:**
+
 - AI endpoints: 20 req/min per IP, burst 5
 - HTTP 429 returned immediately for excess requests
 
 **Layer 2 — proxy:**
+
 - `/api/ai/chat`: 30 req/min
 - `/api/ai/categorize`: 10 req/min
 - Input length cap applied before reaching Ollama
@@ -221,6 +224,7 @@ docker logs mps-ai-proxy | grep CANARY        # extraction attempts only
 Items marked `[BLOCK]` are merge blockers.
 
 **AI and LLM**
+
 - [ ] `[BLOCK]` All AI calls route through `mps-ai-proxy` — no direct browser-to-Ollama calls
 - [ ] `[BLOCK]` System prompt defined only in `api/server.js`
 - [ ] `[BLOCK]` All user input passes through `sanitize()` before Ollama
@@ -233,21 +237,25 @@ Items marked `[BLOCK]` are merge blockers.
 - [ ] `AbortSignal.timeout` defined on every inference call
 
 **Human-in-the-loop**
+
 - [ ] `[BLOCK]` Any high-agency action gated on server-side boolean, not AI text
 - [ ] Human confirmation modal present for real-world consequences
 
 **Containers**
+
 - [ ] `no-new-privileges: true`
 - [ ] Non-root user defined
 - [ ] Memory and CPU limits defined
 - [ ] Port exposure is minimum required
 
 **HTTP**
+
 - [ ] Full security header block in nginx config
 - [ ] `server_tokens off` present
 - [ ] CSP does not include `unsafe-inline` or `unsafe-eval`
 
 **CI/CD**
+
 - [ ] `[BLOCK]` `npm audit --audit-level=high` passes cleanly for frontend and proxy
 
 ---
@@ -323,27 +331,63 @@ Staff access is gated by an environment-variable access code. Do not use a weak 
 
 ### Structured Constituency Routing
 
-The current implementation maps postal sector prefixes to constituency data (MP name, GRC, division, branch address, session schedule) using a client-side lookup table in the frontend bundle. This approach has three limitations:
+The current implementation maps postal sector prefixes (first two digits of a six-digit postal code) to constituency data using a client-side lookup table in the frontend bundle. This approach has two fundamental problems.
 
-- The mapping is visible in the browser bundle — anyone can inspect it
-- MP assignments change after every General Election and must be updated via a frontend rebuild
-- Postal sector prefixes are coarse — a single two-digit prefix can span multiple divisions
+**Problem 1 — Postal sector prefixes are not reliable constituency boundary markers.**
+A single two-digit prefix can plausibly span multiple GRC divisions or branches. Singapore's electoral boundaries follow planning area and street-level boundaries, not postal sector lines. A resident at postal code 32XXXX may belong to a different division than their neighbour at 32YYYY. The prefix cannot be the definitive routing key.
 
-**Planned architecture:**
+**Problem 2 — The data is incomplete, client-side, and not GE-resilient.**
+Singapore's GE2025 (3 May 2025) returned 97 elected MPs, each serving one branch. A 4-member GRC has 4 branches within it — one per MP. The current mapping covers a subset of postal sectors, does not reflect post-GE2025 assignments, and requires a frontend rebuild to update after any General Election.
+
+---
+
+**Planned build — two phases:**
+
+#### Phase 1 — Branch registry (lower complexity, do once)
+
+Compile a complete, verified server-side registry of all 97 branches. Branch addresses are stable and rarely change outside of a GE or PAP branch restructuring. This replaces the client-side lookup entirely.
+
+Each branch record follows this schema:
+
+```json
+{
+  "branch": "Kolam Ayer",
+  "grc": "Jalan Besar GRC",
+  "division": "Kolam Ayer",
+  "mp": "Dr. Wan Rizal",
+  "primaryPostalSectors": ["33", "34"],
+  "venues": [
+    {
+      "address": "Blk XXX Kolam Ayer [full address]",
+      "schedule": "Every Monday, 7.30 PM",
+      "frequency": "weekly"
+    },
+    {
+      "address": "Blk YYY [full address]",
+      "schedule": "Every alternate Wednesday, 7.30 PM",
+      "frequency": "fortnightly"
+    }
+  ]
+}
+```
+
+The `venues` array accommodates the real-world pattern where a single branch runs split sessions — different locations on different days, with different recurrence patterns (weekly at one venue, fortnightly at another). This is not an edge case; it is a documented operational pattern across multiple branches.
+
+#### Phase 2 — Geocoding-based routing (medium complexity)
+
+Replace prefix matching with precise geocoding via the OneMap API (Singapore Land Authority, official, free):
 
 ```text
 Resident (postal code)
   → mps-ai-proxy: GET /api/constituency?postal={6-digit}
-    → OneMap API (SLA, official): postal code → planning area + lat/lng
-    → server-side JSON config: planning area → GRC, division, MP name, branch, schedule
-  ← verified, current constituency data
+    → OneMap API: postal code → lat/lng + planning area
+    → server-side branch registry: nearest branch lookup by planning area
+  ← branch record with mp, venues[], and schedules
 ```
 
-The `POSTAL_TO_CONSTITUENCY` lookup moves from the React bundle into a server-side config file maintained on `mps-ai-proxy`. After each General Election, a single config file update and proxy restart is all that is required — no frontend rebuild, no redeployment.
+OneMap resolves the postal code to a planning area and coordinates. The branch registry maps planning area → branch. This eliminates the prefix ambiguity problem: a full six-digit postal code returns a precise planning area, which maps correctly to a branch even when two postal codes with the same prefix fall in different divisions.
 
-The planning area layer (30+ areas) is resolved by OneMap, which is maintained by the Singapore Land Authority. The MP assignment layer (~30 planning areas → MP/GRC/branch) is maintained as a versioned server-side config file, auditable and updatable independently of any application code.
-
-This architectural change eliminates the risk of stale MP data being served from a public bundle, and provides a single source of truth for constituency routing that survives General Election boundary changes.
+After each General Election: update the server-side branch registry JSON, restart the proxy. No frontend rebuild required.
 
 ---
 
