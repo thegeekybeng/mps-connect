@@ -222,7 +222,7 @@ docker logs mps-ai-proxy | grep CANARY        # extraction attempts only
 
 Items marked `[BLOCK]` are merge blockers.
 
-**AI and LLM**
+#### AI and LLM
 
 - [ ] `[BLOCK]` All AI calls route through `mps-ai-proxy` — no direct browser-to-Ollama calls
 - [ ] `[BLOCK]` System prompt defined only in `api/server.js`
@@ -235,25 +235,25 @@ Items marked `[BLOCK]` are merge blockers.
 - [ ] Rate limit defined for the new endpoint
 - [ ] `AbortSignal.timeout` defined on every inference call
 
-**Human-in-the-loop**
+#### Human-in-the-loop
 
 - [ ] `[BLOCK]` Any high-agency action gated on server-side boolean, not AI text
 - [ ] Human confirmation modal present for real-world consequences
 
-**Containers**
+#### Containers
 
 - [ ] `no-new-privileges: true`
 - [ ] Non-root user defined
 - [ ] Memory and CPU limits defined
 - [ ] Port exposure is minimum required
 
-**HTTP**
+#### HTTP
 
 - [ ] Full security header block in nginx config
 - [ ] `server_tokens off` present
 - [ ] CSP does not include `unsafe-inline` or `unsafe-eval`
 
-**CI/CD**
+#### CI/CD
 
 - [ ] `[BLOCK]` `npm audit --audit-level=high` passes cleanly for frontend and proxy
 
@@ -387,6 +387,107 @@ Resident (postal code)
 OneMap resolves the postal code to a planning area and coordinates. The branch registry maps planning area → branch. This eliminates the prefix ambiguity problem: a full six-digit postal code returns a precise planning area, which maps correctly to a branch even when two postal codes with the same prefix fall in different divisions.
 
 After each General Election: update the server-side branch registry JSON, restart the proxy. No frontend rebuild required.
+
+---
+
+### Immutable Audit Infrastructure
+
+The current audit log writes structured JSON to Docker stdout. This is sufficient for real-time monitoring but fails on three counts: it is not persistent across container recreation, not queryable, and not immutable — logs can be cleared or lost.
+
+For a civic platform handling constituent data and AI interactions, the audit trail must survive deployments, support investigation, and be tamper-evident.
+
+**Planned implementation: SQLite with append-only enforcement**
+
+A volume-mounted SQLite database on `mps-ai-proxy`. No additional containers. Two tables:
+
+```sql
+-- Security and AI audit events (existing console.log events, persisted)
+CREATE TABLE audit_events (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts          TEXT NOT NULL,
+  event_type  TEXT NOT NULL,  -- CHAT | CATEGORIZE | BLOCKED_ORIGIN | CANARY_TRIGGERED | ERROR
+  session_id  TEXT,
+  ip_hash     TEXT,
+  input_len   INTEGER,
+  output_len  INTEGER,
+  is_urgent   INTEGER,        -- 0 | 1
+  canary_det  INTEGER,        -- 0 | 1
+  detail      TEXT,           -- JSON blob for event-specific fields
+  prev_hash   TEXT NOT NULL   -- SHA-256 of previous row for chain integrity
+);
+
+-- Case lifecycle events (see Case Traceability below)
+CREATE TABLE case_events (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts          TEXT NOT NULL,
+  case_ref    TEXT NOT NULL,
+  status_code TEXT NOT NULL,
+  actor       TEXT NOT NULL,  -- SYSTEM | MP_OFFICE | AGENCY | RESIDENT
+  note        TEXT,
+  prev_hash   TEXT NOT NULL
+);
+```
+
+The `prev_hash` column implements a cryptographic chain: each row stores the SHA-256 of the previous row's content. Any retroactive modification to any row breaks the chain and is detectable on verification. No `UPDATE` or `DELETE` is ever issued on either table by application code.
+
+---
+
+### Case Traceability and Agency Accountability
+
+#### The problem this solves
+
+The MP correspondence ecosystem has an existing structured system — gather.gov.sg — that records case referrals to agencies and tracks agency responses. That system works. What it does not provide is an independent, tamper-evident record anchored to the resident's original submission timestamp.
+
+MPS-Connect's immutable audit log is a parallel, independent layer. It records when the resident submitted, when the case was referred, and when each subsequent lifecycle event occurred. These timestamps cross-reference against gather.gov.sg records. If a gather.gov.sg entry logs an automated agency acknowledgement as a substantive response, the MPS-Connect record — which tracks `AGY-RCV` and `AGY-RSP` as distinct events — surfaces that discrepancy. An agency that takes 3 months to provide a substantive response while an automated receipt acknowledgement sits in the gather.gov.sg record has no cover when both records are held side by side.
+
+#### Case number format
+
+```text
+MPS-{BRANCH}-{YYYYMM}-{PRIORITY}-{SEQ}
+Example: MPS-JBKA-202505-P1-0042
+```
+
+| Segment | Meaning | Notes |
+| --- | --- | --- |
+| `MPS` | Platform prefix | Fixed |
+| `JBKA` | Branch code (GRC + Division abbreviated) | Derived from constituency routing |
+| `202505` | Year + Month of submission | Auto-generated |
+| `P1–P4` | Case priority at intake | P1=Critical, P2=High, P3=Medium, P4=Low |
+| `0042` | Monthly sequence per branch | Zero-padded, resets per branch per month |
+
+The priority is set at intake by the AI categorisation engine, not by the resident. A P1 case number signals urgency to every downstream party from the moment it is created.
+
+#### Case lifecycle status codes
+
+| Code | Party responsible | Meaning | SLA clock |
+| --- | --- | --- | --- |
+| `SUBMITTED` | System | Resident submitted case | T0 — all clocks start |
+| `MP-ACK` | MP Office | Case reviewed and acknowledged | T1 |
+| `MP-REF` | MP Office | Referred to government agency with MP letter | T2 — agency SLA clock starts |
+| `AGY-RCV` | Agency | Automated receipt acknowledgement logged | Recorded, **does not stop agency SLA clock** |
+| `AGY-RSP` | Agency | First substantive human response received | T4 — agency first response = T4 − T2 |
+| `AGY-ACT` | Agency | Agency took action or made a decision | T5 — agency resolution = T5 − T2 |
+| `MP-FUP` | MP Office | MP office followed up with resident | T6 |
+| `RES-CLO` | MP Office / Resident | Case closed, resident informed | T7 — end-to-end = T7 − T0 |
+| `ESCALATED` | MP Office | Agency non-responsive — escalation triggered | Flags SLA breach |
+
+Every status change is written as an immutable row in `case_events`. The full chain of events for any case is queryable at any time.
+
+#### What the data enables
+
+The SLA deltas are computable directly from the timestamps:
+
+| Metric | Calculation | What it measures |
+| --- | --- | --- |
+| MP acknowledgement time | T1 − T0 | How fast the MP office picked up the case |
+| Agency intake lag | T3 − T2 | How long the agency took to acknowledge a referral |
+| Agency first response | T4 − T2 | How long to a substantive response |
+| Agency resolution time | T5 − T2 | How long to a decision or action |
+| End-to-end resolution | T7 − T0 | Total time from resident submission to close |
+
+Aggregated across cases, this produces a factual performance record per agency. The expectation for civil servants is to respond to citizen queries in a timely fashion — that is their function. MPS-Connect creates the structured, immutable record that makes it possible to measure whether that is happening, and where it is not. The MP office retains full discretion on what to do with the data. The platform's role is to ensure the data exists and is accurate.
+
+Response quality — whether agency responses contain sufficient information to actually resolve the resident's concern — is a separate dimension and a planned future addition.
 
 ---
 
