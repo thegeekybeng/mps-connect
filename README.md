@@ -53,7 +53,7 @@ This platform is built to OWASP LLM Top 10 compliance standards. The authoritati
 
 | # | Risk | Status | Control |
 |---|------|--------|---------|
-| LLM01 | Prompt Injection | ✅ Mitigated | Server-side proxy, 7-layer input sanitization, canary tokens |
+| LLM01 | Prompt Injection | ✅ Mitigated | Server-side proxy, 9-layer input sanitization (incl. encoded payload detection), scope-restricted single-purpose identity, canary tokens, output anomaly check |
 | LLM02 | Insecure Output Handling | ✅ Mitigated | HTML/script stripping, output schema enforcement, whitelist validation |
 | LLM03 | Training Data Poisoning | ⚪ N/A | Read-only inference; no fine-tuning pipeline |
 | LLM04 | Model Denial of Service | ✅ Mitigated | Dual-layer rate limiting (nginx + proxy), request size caps, 30s timeout |
@@ -81,6 +81,8 @@ All AI calls route through `mps-ai-proxy` — a dedicated server-side Express co
 | PI-05 | Code delimiter spoofing — prompt boundary markers |
 | PI-06 | History poisoning — max 20 turns; all turns individually sanitized |
 | PI-07 | `||URGENT_BOOKING||` stripped from all user input before inference |
+| PI-08 | Encoded payload detection — morse code (5+ tokens), base64 (6+ groups), hex (8+ byte pairs) rejected at proxy before inference |
+| PI-09 | Scope-restricted identity — model defined as single-purpose constituency assistant; explicit authorised/unauthorised task list; out-of-scope requests refused regardless of encoding or framing (RLHF helpfulness override mitigation) |
 
 **Canary token detection:** A per-request UUID is embedded in the system prompt. If the model echoes the canary in its response (extraction attempt), the proxy redacts it and emits `SECURITY_CANARY_TRIGGERED` in the audit log.
 
@@ -94,6 +96,8 @@ All AI calls route through `mps-ai-proxy` — a dedicated server-side Express co
 - All HTML tags stripped
 - `javascript:` → `javascript-blocked:`
 - `vbscript:` → `vbscript-blocked:`
+
+**Output anomaly check on `/api/ai/chat`:** After sanitization, chat responses are scanned for structural anomalies (SQL patterns, code blocks, jailbreak phrases). Any match returns HTTP 422 and logs `OUTPUT_ANOMALY_CHAT` — the response is never returned to the browser.
 
 **Categorization schema enforcement:** AI-structured responses (category, urgency) are rebuilt from validated fields only. Unknown fields are discarded. Enum values are checked against hardcoded allowlists. Free-text fields are length-capped.
 
