@@ -6,11 +6,14 @@
 // server-side. The browser never sees or controls these.
 // =============================================================
 
-const express = require('express');
-const crypto  = require('crypto');
-const app     = express();
+const express      = require('express');
+const crypto       = require('crypto');
+const cookieParser = require('cookie-parser');
+const app          = express();
 
 app.use(express.json({ limit: '512kb' }));
+app.use(express.urlencoded({ extended: false }));
+app.use(cookieParser());
 
 // ── Config (server-side only — never sent to browser) ────────
 const OLLAMA_ENDPOINT = process.env.OLLAMA_ENDPOINT || 'http://100.x.x.x:11434/api/chat';
@@ -605,6 +608,234 @@ app.post('/api/ai/causality', async (req, res) => {
     auditLog('ERROR_CAUSALITY', { msg: err.message });
     res.status(503).json({ error: 'AI service temporarily unavailable' });
   }
+});
+
+// =============================================================
+// Singpass FAPI v3 Auth Module
+// MockPass (dev) → real NDI (production) by swapping SINGPASS_BASE_URL.
+// Browser never touches tokens. All crypto is server-side.
+//
+// DEV KEYS: The RP keys below are the published MockPass development
+// keypair (github.com/opengovsg/mockpass static/certs/fapi-rp-private.json).
+// They are intentionally public. Replace via RP_KEYS env var for production.
+// =============================================================
+
+const SP_BASE       = process.env.SINGPASS_BASE_URL   || 'http://mockpass:5156';
+const SP_CLIENT     = process.env.SINGPASS_CLIENT_ID  || 'mps-connect';
+const SP_REDIRECT   = process.env.SINGPASS_REDIRECT_URI
+                        || 'https://mps-connect.thegeekybeng.com/auth/singpass/callback';
+const SESSION_COOKIE = 'mps_session';
+const SESSION_TTL    = 30 * 60 * 1000;  // 30 minutes
+const PKCE_TTL       = 5  * 60 * 1000;  // 5 minutes
+
+// Published MockPass dev RP keys — NOT secrets (in public repo)
+const MOCKPASS_RP_JWKS = {
+  keys: [
+    { kty:'EC', crv:'P-256', use:'sig', alg:'ES256', kid:'fapi-rp-sig-key-01',
+      x:'tkRXMLpC7djlH7cqntg8-fuekxG9YTvJx8IsRKApcAg',
+      y:'elyS0xZn3ymk65tVPYO3pZplEaOEZtj_RegJ3_cwq7A',
+      d:'uRwK14a2icjic0DSFsOG2PgKgqfZobaqhjgGS0wbkho' },
+    { kty:'EC', crv:'P-256', use:'enc', alg:'ECDH-ES+A256KW', kid:'fapi-rp-enc-key-01',
+      x:'fvSpp2PLnde3dtY8VpY881WUxijtSqmhu4daeavEuKQ',
+      y:'LzH6bK3nxZFPh8tPLjUN0EMYnIgQjkyUiafh4Eafmw8',
+      d:'wqtEFMSkoWeYqfZ-aqbSn5CE2KmgqWZgxrowWQaHCXA' },
+  ],
+};
+
+// Lazy-loaded CryptoKeys and SP JWKS
+let _rpSigKey = null;
+let _rpEncKey = null;
+let _spJwks   = null;  // MockPass server public keys for JWS verification
+
+async function loadJose() {
+  // jose v5 is ESM-only; dynamic import works inside CJS async functions.
+  return import('jose');
+}
+
+async function initRPKeys() {
+  if (_rpSigKey && _rpEncKey) return;
+  const { importJWK } = await loadJose();
+  _rpSigKey = await importJWK(MOCKPASS_RP_JWKS.keys[0], 'ES256');
+  _rpEncKey = await importJWK(MOCKPASS_RP_JWKS.keys[1], 'ECDH-ES+A256KW');
+  auditLog('SINGPASS_KEYS_LOADED', { mode: 'mockpass-dev-keys' });
+}
+
+async function fetchSPJwks() {
+  if (_spJwks) return _spJwks;
+  const cfg = await (await fetch(
+    `${SP_BASE}/singpass/v3/fapi/.well-known/openid-configuration`,
+    { signal: AbortSignal.timeout(8_000) },
+  )).json();
+  _spJwks = await (await fetch(cfg.jwks_uri, { signal: AbortSignal.timeout(8_000) })).json();
+  auditLog('SP_JWKS_FETCHED', { issuer: cfg.issuer });
+  return _spJwks;
+}
+
+// In-memory stores (sufficient for single-instance dev; replace with Redis for HA prod)
+const pendingAuth = new Map(); // state → { codeVerifier, nonce, expiresAt }
+const sessions    = new Map(); // sessionId → { nricMasked, nricHash, expiresAt }
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of pendingAuth) if (v.expiresAt < now) pendingAuth.delete(k);
+  for (const [k, v] of sessions)    if (v.expiresAt < now) sessions.delete(k);
+}, 5 * 60 * 1000);
+
+function maskNRIC(nric) {
+  if (!nric || nric.length < 5) return '****';
+  return `${nric[0]}****${nric.slice(-4)}`;
+}
+function genVerifier()  { return crypto.randomBytes(32).toString('base64url'); }
+function genChallenge(v) {
+  return crypto.createHash('sha256').update(v).digest().toString('base64url');
+}
+
+// ── GET /auth/singpass/start ──────────────────────────────────────────
+app.get('/auth/singpass/start', async (req, res) => {
+  try {
+    await initRPKeys();
+    const { SignJWT } = await loadJose();
+
+    const codeVerifier  = genVerifier();
+    const codeChallenge = genChallenge(codeVerifier);
+    const state         = crypto.randomUUID();
+    const nonce         = crypto.randomUUID();
+
+    pendingAuth.set(state, { codeVerifier, nonce, expiresAt: Date.now() + PKCE_TTL });
+
+    // JAR — signed authorization request
+    const jar = await new SignJWT({
+      response_type: 'code', client_id: SP_CLIENT, redirect_uri: SP_REDIRECT,
+      scope: 'openid', state, nonce,
+      code_challenge: codeChallenge, code_challenge_method: 'S256',
+    })
+      .setProtectedHeader({ alg: 'ES256', kid: 'fapi-rp-sig-key-01' })
+      .setIssuedAt().setExpirationTime('2m')
+      .sign(_rpSigKey);
+
+    const parResp = await fetch(`${SP_BASE}/singpass/v3/fapi/par`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ client_id: SP_CLIENT, request: jar, redirect_uri: SP_REDIRECT }).toString(),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!parResp.ok) throw new Error(`PAR ${parResp.status}: ${(await parResp.text()).slice(0,200)}`);
+
+    const { request_uri } = await parResp.json();
+    auditLog('SINGPASS_START', { state: state.slice(0,8) });
+
+    const authUrl = new URL(`${SP_BASE}/singpass/v3/fapi/auth`);
+    authUrl.searchParams.set('client_id', SP_CLIENT);
+    authUrl.searchParams.set('request_uri', request_uri);
+    res.redirect(authUrl.toString());
+  } catch (err) {
+    auditLog('SINGPASS_START_ERR', { msg: err.message });
+    res.redirect('/?singpass=error&reason=init_failed');
+  }
+});
+
+// ── GET /auth/singpass/callback ───────────────────────────────────────
+app.get('/auth/singpass/callback', async (req, res) => {
+  const { code, state, error } = req.query;
+
+  if (error) {
+    auditLog('SINGPASS_CB_ERROR', { error });
+    return res.redirect(`/?singpass=error&reason=${encodeURIComponent(String(error))}`);
+  }
+  if (!code || !state || typeof state !== 'string') {
+    return res.redirect('/?singpass=error&reason=invalid_callback');
+  }
+
+  const pending = pendingAuth.get(state);
+  if (!pending || pending.expiresAt < Date.now()) {
+    pendingAuth.delete(state);
+    return res.redirect('/?singpass=error&reason=state_expired');
+  }
+  pendingAuth.delete(state);
+
+  try {
+    await initRPKeys();
+    const { SignJWT, compactDecrypt, importJWK, jwtVerify } = await loadJose();
+    const spJwks = await fetchSPJwks();
+    const tokenEndpoint = `${SP_BASE}/singpass/v3/fapi/token`;
+
+    // Client assertion for private_key_jwt auth
+    const clientAssertion = await new SignJWT({ sub: SP_CLIENT, aud: tokenEndpoint, jti: crypto.randomUUID() })
+      .setProtectedHeader({ alg: 'ES256', kid: 'fapi-rp-sig-key-01' })
+      .setIssuer(SP_CLIENT).setIssuedAt().setExpirationTime('2m')
+      .sign(_rpSigKey);
+
+    const tokenResp = await fetch(tokenEndpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code', client_id: SP_CLIENT,
+        code: String(code), redirect_uri: SP_REDIRECT,
+        code_verifier: pending.codeVerifier,
+        client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+        client_assertion: clientAssertion,
+      }).toString(),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!tokenResp.ok) throw new Error(`Token ${tokenResp.status}: ${(await tokenResp.text()).slice(0,200)}`);
+
+    const { id_token } = await tokenResp.json();
+    if (!id_token) throw new Error('No id_token in response');
+
+    // Decrypt JWE → inner JWS
+    const { plaintext } = await compactDecrypt(id_token, _rpEncKey);
+    const innerJwt = new TextDecoder().decode(plaintext);
+
+    // Verify inner JWS against SP server public key(s)
+    let nric = null;
+    for (const jwk of spJwks.keys) {
+      try {
+        const spKey = await importJWK(jwk, jwk.alg);
+        const { payload } = await jwtVerify(innerJwt, spKey, { clockTolerance: 30 });
+        nric = String(payload.sub || payload['https://api.singpass.gov.sg/sub'] || '');
+        if (nric) break;
+      } catch { /* try next key */ }
+    }
+    if (!nric) throw new Error('NRIC not in verified id_token');
+
+    // Create session — store only masked NRIC + hash, never plaintext
+    const sessionId  = crypto.randomUUID();
+    const nricHash   = crypto.createHash('sha256').update(nric).digest('hex');
+    sessions.set(sessionId, { nricMasked: maskNRIC(nric), nricHash, expiresAt: Date.now() + SESSION_TTL });
+
+    auditLog('SINGPASS_AUTH_OK', { nricHash: nricHash.slice(0,8) });
+
+    res.cookie(SESSION_COOKIE, sessionId, {
+      httpOnly: true, sameSite: 'Lax',
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: SESSION_TTL,
+    });
+    res.redirect('/?singpass=success');
+  } catch (err) {
+    auditLog('SINGPASS_CB_FAIL', { msg: err.message });
+    res.redirect('/?singpass=error&reason=auth_failed');
+  }
+});
+
+// ── GET /auth/session ───────────────────────────────────────────────
+app.get('/auth/session', (req, res) => {
+  const sid = req.cookies[SESSION_COOKIE];
+  if (!sid) return res.json({ authenticated: false });
+  const session = sessions.get(sid);
+  if (!session || session.expiresAt < Date.now()) {
+    sessions.delete(sid);
+    res.clearCookie(SESSION_COOKIE);
+    return res.json({ authenticated: false });
+  }
+  res.json({ authenticated: true, nricMasked: session.nricMasked });
+});
+
+// ── POST /auth/logout ─────────────────────────────────────────────────
+app.post('/auth/logout', (req, res) => {
+  const sid = req.cookies[SESSION_COOKIE];
+  if (sid) { sessions.delete(sid); auditLog('SINGPASS_LOGOUT', {}); }
+  res.clearCookie(SESSION_COOKIE);
+  res.json({ ok: true });
 });
 
 // ── Health ────────────────────────────────────────────────────
