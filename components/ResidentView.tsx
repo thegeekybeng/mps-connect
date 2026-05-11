@@ -54,9 +54,15 @@ const ResidentView: React.FC<ResidentViewProps> = ({
   const [voiceEnabled, setVoiceEnabled] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [speechError, setSpeechError] = useState<string | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef   = useRef<Blob[]>([]);
   const currentAudioRef  = useRef<HTMLAudioElement | null>(null);
+
+  const showSpeechError = (msg: string) => {
+    setSpeechError(msg);
+    setTimeout(() => setSpeechError(null), 5000);
+  };
 
   const playResponse = useCallback(async (text: string) => {
     if (!voiceEnabled || !text.trim()) return;
@@ -72,7 +78,7 @@ const ResidentView: React.FC<ResidentViewProps> = ({
       audio.onended = () => { URL.revokeObjectURL(url); currentAudioRef.current = null; };
       audio.play();
     } catch (e) {
-      console.warn('TTS playback failed:', e);
+      showSpeechError('Voice output unavailable — speech service is offline.');
     }
   }, [voiceEnabled]);
 
@@ -90,7 +96,7 @@ const ResidentView: React.FC<ResidentViewProps> = ({
           const text = await transcribeAudio(blob);
           if (text) setInputText(prev => (prev.trim() ? prev + ' ' + text : text));
         } catch (e) {
-          console.warn('STT failed:', e);
+          showSpeechError('Transcription failed — speech service may be offline.');
         } finally {
           setIsTranscribing(false);
         }
@@ -99,7 +105,7 @@ const ResidentView: React.FC<ResidentViewProps> = ({
       mediaRecorderRef.current = recorder;
       setIsRecording(true);
     } catch (e) {
-      console.warn('Microphone access denied:', e);
+      showSpeechError('Microphone access denied — please allow microphone in your browser.');
     }
   };
 
@@ -260,6 +266,11 @@ const ResidentView: React.FC<ResidentViewProps> = ({
                 )}
                 <button onClick={() => setFile(null)} className="absolute -top-2 -right-2 bg-gray-900 text-white p-1 rounded-full"><X size={12} /></button>
             </div>
+        )}
+        {speechError && (
+          <div className="mx-4 mb-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 flex items-center gap-2">
+            <span>⚠️</span> {speechError}
+          </div>
         )}
         <div className="flex items-center gap-2">
             <label className="p-2 hover:bg-gray-100 rounded-full cursor-pointer">
