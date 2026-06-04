@@ -17,7 +17,7 @@ app.use(cookieParser());
 
 // ── Config (server-side only — never sent to browser) ────────
 const OLLAMA_ENDPOINT = process.env.OLLAMA_ENDPOINT || 'http://100.x.x.x:11434/api/chat';
-const AI_MODEL        = process.env.AI_MODEL        || 'gemma4:e2b';
+const AI_MODEL        = process.env.AI_MODEL        || 'gemma4:26b';
 const PORT            = parseInt(process.env.PORT   || '3100', 10);
 
 // Only accept requests from the nginx container on the same network
