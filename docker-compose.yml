@@ -42,7 +42,7 @@ services:
     container_name: mps-ai-proxy
     environment:
       - OLLAMA_ENDPOINT=${OLLAMA_ENDPOINT:-http://100.x.x.x:11434/api/chat}
-      - AI_MODEL=${AI_MODEL:-gemma4:26b}
+      - AI_MODEL=${AI_MODEL:-gemma4:12b-mlx}
       - PORT=3103
       # Singpass FAPI v3 — MockPass for dev, real NDI endpoints for production
       - SINGPASS_BASE_URL=${SINGPASS_BASE_URL:-http://mockpass:5156}
