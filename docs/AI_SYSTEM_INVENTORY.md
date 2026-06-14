@@ -1,18 +1,21 @@
 # MPS Connect — AI System Inventory
+
 > ISO 42001 Clause 4 · IMDA Model AIGF 2nd Ed · Updated: 2026-06-15
 
 ## System Owner
+
 - **Named Accountable Person:** Andrew Yeo (TheGeekyBeng)
 - **Role:** System Developer & Operator
-- **Contact:** Via constituency office
+- **Contact:** Via github
 
 ---
 
 ## AI System Registry
 
 ### System 1: MPS Resident Chat Agent
+
 | Field | Value |
-|-------|-------|
+| ------- | ------- |
 | System ID | MPS-AI-001 |
 | Purpose | Constituency casework — receives resident issue descriptions, identifies relevant agencies, and explains available help options |
 | AI Model | Ollama gemma4:e4b (locally hosted) |
@@ -26,8 +29,9 @@
 | Audit Trail | Immutable SQLite chain (SHA-256 prev_hash) at `/data/audit.db` |
 
 ### System 2: MPS Causality Engine
+
 | Field | Value |
-|-------|-------|
+| ------- | ------- |
 | System ID | MPS-AI-002 |
 | Purpose | 3-stage causal analysis pipeline — extracts entities/timeline, builds causal graph, routes to agencies, and generates letter templates |
 | AI Model | Ollama gemma4:e4b (locally hosted, same instance) |
@@ -41,8 +45,9 @@
 | Audit Trail | `CAUSALITY` events in audit chain |
 
 ### System 3: MPS Approval Agent
+
 | Field | Value |
-|-------|-------|
+| ------- | ------- |
 | System ID | MPS-AI-003 |
 | Purpose | Evaluates pending letters against MP preferences for auto-approval candidacy |
 | AI Model | Ollama cascade: gemma4:e2b → gemma4:12b-mlx → qwen3.6:27b |
@@ -61,6 +66,7 @@
 ## Operational Envelope — MPS-AI-001 (Chat Agent)
 
 ### Permitted Actions
+
 - Respond to resident queries about constituency matters
 - Identify relevant Singapore government agencies
 - Provide agency hotlines from the approved routing table
@@ -68,6 +74,7 @@
 - Mirror the resident's language (EN, ZH, MS, TA, Singlish)
 
 ### Prohibited Actions
+
 - Make binding commitments on behalf of the MP
 - Access or modify case records in the database
 - Process requests outside constituency casework scope
@@ -75,8 +82,9 @@
 - Reference Malaysian or non-Singapore agencies
 
 ### Boundary Enforcement
+
 | Mechanism | Level | Bypass Possible? |
-|-----------|-------|-----------------|
+| ----------- | ------- | ----------------- |
 | System prompt persona constraints | Prompt | Yes (via injection) |
 | Input sanitisation regex (12+ patterns) | Code | No |
 | Encoded payload detector (morse/b64/hex) | Code | No |
@@ -87,6 +95,7 @@
 | Kill switch | Environment | No |
 
 ### Emergency Stop
+
 - **Mechanism:** Set `AI_KILL_SWITCH=true` in `.env` and restart the `mps-ai-proxy` container
 - **Effect:** All `/api/ai/*` endpoints return 503 immediately; `/health` remains operational
 - **Recovery:** Set `AI_KILL_SWITCH=false` and restart
@@ -96,7 +105,7 @@
 
 ## Accountability Chain (IMDA Agentic AI Framework Dim.2)
 
-```
+```text
 Resident submits case
     ↓
 AI Agent processes (MPS-AI-001/002/003)

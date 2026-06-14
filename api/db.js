@@ -5,7 +5,7 @@ const pool = new Pool({
   host: process.env.POSTGRES_HOST || 'mps-postgres',
   port: parseInt(process.env.POSTGRES_PORT || '5432', 10),
   user: process.env.POSTGRES_USER || 'mps',
-  password: process.env.POSTGRES_PASSWORD || 'mps_secret',
+  password: process.env.POSTGRES_PASSWORD || '',
   database: process.env.POSTGRES_DB || 'mps_connect',
 });
 

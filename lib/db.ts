@@ -11,7 +11,7 @@ export const pool =
     port:     parseInt(process.env.POSTGRES_PORT || '5432', 10),
     database: process.env.POSTGRES_DB       || 'mps_connect',
     user:     process.env.POSTGRES_USER     || 'mps',
-    password: process.env.POSTGRES_PASSWORD || 'mps_secret',
+    password: process.env.POSTGRES_PASSWORD || '',
     max:      10,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 5_000,

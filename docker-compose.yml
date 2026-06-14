@@ -4,7 +4,7 @@ services:
     image: postgres:15-alpine
     container_name: mps-migrate
     environment:
-      - PGPASSWORD=${POSTGRES_PASSWORD:-mps_secret}
+      - PGPASSWORD=${POSTGRES_PASSWORD:-}
     command: >
       sh -c "psql -h mps-postgres -U mps -d mps_connect -f /migrations/init.sql && echo 'Schema + Migration OK'"
     volumes:
@@ -30,7 +30,7 @@ services:
       - POSTGRES_PORT=5432
       - POSTGRES_DB=mps_connect
       - POSTGRES_USER=mps
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-mps_secret}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-}
       # Redis (queue pub/sub + session)
       - REDIS_URL=redis://mps-redis:6379
       # AI Proxy (internal)
@@ -181,7 +181,7 @@ services:
     container_name: mps-postgres
     environment:
       - POSTGRES_USER=mps
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-mps_secret}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-}
       - POSTGRES_DB=mps_connect
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U mps"]

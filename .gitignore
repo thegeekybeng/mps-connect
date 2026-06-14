@@ -51,3 +51,6 @@ docs/session-history/
 
 # Antigravity / Gemini working directories
 .antigravityignore
+
+# Session handoff — internal developer resume doc, not for public repos
+HANDOFF.md

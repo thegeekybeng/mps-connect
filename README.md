@@ -114,7 +114,7 @@ docker exec -i mps-postgres psql -U mps -d mps_connect < ./db/seed_cases_300.sql
 
 | Variable | Purpose | Default |
 | --- | --- | --- |
-| `POSTGRES_PASSWORD` | PostgreSQL password | `mps_secret` |
+| `POSTGRES_PASSWORD` | PostgreSQL password | — (required) |
 | `JWT_SECRET` | JWT signing secret (min 32 chars) | — |
 | `VITE_STAFF_ACCESS_CODE` | Staff portal access code | — |
 | `OLLAMA_ENDPOINT` | Ollama chat API URL (server-side proxy only) | `http://localhost:11434/api/chat` |
@@ -160,7 +160,6 @@ mps-connect/
 │   ├── DATA_BREACH_RESPONSE_PLAN.md
 │   └── GE2025_CONSTITUENCY_DATA.md
 ├── docker-compose.yml      # Full stack orchestration
-├── HANDOFF.md              # Session resume guide
 ├── ROADMAP.md              # Development roadmap
 └── PORTS.md                # Port allocation ledger
 ```
