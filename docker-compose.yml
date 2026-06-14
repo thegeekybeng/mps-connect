@@ -1,36 +1,73 @@
 services:
+  # ── Schema Migration (runs once on deploy, then exits) ────────
+  mps-migrate:
+    image: postgres:15-alpine
+    container_name: mps-migrate
+    environment:
+      - PGPASSWORD=${POSTGRES_PASSWORD:-mps_secret}
+    command: >
+      sh -c "psql -h mps-postgres -U mps -d mps_connect -f /migrations/init.sql && echo 'Schema + Migration OK'"
+    volumes:
+      - ./db:/migrations:ro
+    networks:
+      - ai-bridge
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  # ── Next.js App (frontend + staff API) ───────────────────────
   mps-connect:
     build:
       context: .
       dockerfile: Dockerfile
-      args:
-        - VITE_SPEECH_HOST=${VITE_SPEECH_HOST}
-        - VITE_STAFF_ACCESS_CODE=${VITE_STAFF_ACCESS_CODE}
-        # VITE_OLLAMA_HOST and VITE_OLLAMA_MODEL removed — AI now goes via server-side proxy
     container_name: mps-connect
+    environment:
+      # Auth — MUST be changed in production (min 32 random chars)
+      - JWT_SECRET=${JWT_SECRET:-change-this-in-production-must-be-32-chars-min}
+      # Database
+      - POSTGRES_HOST=mps-postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=mps_connect
+      - POSTGRES_USER=mps
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-mps_secret}
+      # Redis (queue pub/sub + session)
+      - REDIS_URL=redis://mps-redis:6379
+      # AI Proxy (internal)
+      - AI_PROXY_URL=http://mps-ai-proxy:3103
+      - NODE_ENV=${NODE_ENV:-production}
+      # Upload portal URL (used to generate upload token links)
+      - NEXT_PUBLIC_APP_URL=${APP_URL:-http://localhost:3080}
+      # ClamAV daemon — scans files before BYTEA insert (upload route runs here)
+      - CLAMAV_HOST=mps-clamav
+      - CLAMAV_PORT=3310
+      # Set to true when serving over HTTPS via nginx — false allows HTTP access on port 3080
+      - COOKIE_SECURE=${COOKIE_SECURE:-false}
     ports:
-      - "3080:80"
+      - "3080:3000"
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:80/"]
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health', r => process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 15s
+      start_period: 20s
     security_opt:
       - no-new-privileges:true
     deploy:
       resources:
         limits:
-          memory: 128M
-          cpus: "0.5"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+          memory: 256M
+          cpus: "0.75"
     restart: unless-stopped
     networks:
       - ai-bridge
     depends_on:
+      mps-migrate:
+        condition: service_completed_successfully
       mps-ai-proxy:
         condition: service_healthy
+      mps-clamav:
+        condition: service_started   # upload route degrades gracefully if ClamAV is still loading
 
   # Server-side AI proxy — system prompt, PII masking, canary tokens,
   # injection sanitization, and audit logging all live here.
@@ -41,15 +78,22 @@ services:
       dockerfile: Dockerfile
     container_name: mps-ai-proxy
     environment:
-      - OLLAMA_ENDPOINT=${OLLAMA_ENDPOINT:-http://100.x.x.x:11434/api/chat}
-      - AI_MODEL=${AI_MODEL:-gemma4:12b-mlx}
+      - OLLAMA_ENDPOINT=${OLLAMA_ENDPOINT:-http://localhost:11434/api/chat}
+      - AI_MODEL=${AI_MODEL:-gemma4:e4b}
       - PORT=3103
-      # Singpass FAPI v3 — MockPass for dev, real NDI endpoints for production
-      - SINGPASS_BASE_URL=${SINGPASS_BASE_URL:-http://mockpass:5156}
-      - SINGPASS_CLIENT_ID=${SINGPASS_CLIENT_ID:-mps-connect}
-      - SINGPASS_REDIRECT_URI=${SINGPASS_REDIRECT_URI:-https://mps-connect.thegeekybeng.com/auth/singpass/callback}
+      # Singpass FAPI v3 — DORMANT (disabled 2026-06-13)
+      # Auth moved to Next.js /auth/demo. Re-enable for real NDI:
+      # - SINGPASS_BASE_URL=${SINGPASS_BASE_URL:-http://mockpass:5156}
+      # - SINGPASS_CLIENT_ID=${SINGPASS_CLIENT_ID:-mps-connect}
+      # - SINGPASS_REDIRECT_URI=${SINGPASS_REDIRECT_URI:-https://your-domain.com/auth/singpass/callback}
       - SESSION_SECRET=${SESSION_SECRET:-change-in-production}
-      - NODE_ENV=${NODE_ENV:-development}
+      - NODE_ENV=${NODE_ENV:-production}
+      # IMDA Agentic AI Framework Dim.1 — Kill switch. Set to 'true' to disable all AI endpoints.
+      - AI_KILL_SWITCH=${AI_KILL_SWITCH:-false}
+      # SQLite audit DB path (volume-mounted)
+      - AUDIT_DB_PATH=/data/audit.db
+    ports:
+      - "3103:3103"   # Exposed for nginx /auth/ proxy — SingPass OIDC endpoints
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:3103/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
       interval: 30s
@@ -63,41 +107,113 @@ services:
         limits:
           memory: 192M
           cpus: "0.5"
+    volumes:
+      - audit-data:/data        # immutable SQLite audit chain (audit.js)
     restart: unless-stopped
     networks:
       - ai-bridge
-    depends_on:
-      mockpass:
-        condition: service_healthy
+    # MockPass dependency removed — auth moved to Next.js /auth/demo
+    # depends_on:
+    #   mockpass:
+    #     condition: service_healthy
 
-  # MockPass — dev-only Singpass/CorpPass mock server (OGP)
-  # Phase 3 placeholder: swap SINGPASS_BASE_URL to real NDI endpoint for production.
-  # NOT exposed externally — internal Docker network only.
-  mockpass:
-    image: node:20-alpine
-    container_name: mockpass
-    working_dir: /app
-    command: sh -c "npm install --silent @opengovsg/mockpass && npx mockpass"
+  # ClamAV antivirus daemon — scans uploaded files before storing in PostgreSQL
+  # TCP socket enabled via CLAMD_CONF_* env vars (default is UNIX socket only).
+  # Exposed only on ai-bridge network. Not reachable from outside.
+  mps-clamav:
+    image: clamav/clamav:stable
+    container_name: mps-clamav
     environment:
-      - SHOW_LOGIN_PAGE=true
-      - MOCKPASS_PORT=5156
+      # Enable TCP socket so mps-connect can connect from a separate container
+      - CLAMD_CONF_TCPSocket=3310
+      - CLAMD_CONF_TCPAddr=0.0.0.0
+      - CLAMD_CONF_MaxFileSize=10M
+      - CLAMD_CONF_StreamMaxLength=10M
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:5156/singpass/v3/fapi/.well-known/openid-configuration"]
-      interval: 15s
-      timeout: 5s
+      test: ["CMD", "clamdcheck"]
+      interval: 60s
+      timeout: 30s
       retries: 5
-      start_period: 30s
+      start_period: 180s    # definition download + load takes ~2-3 min on first run
     security_opt:
       - no-new-privileges:true
     deploy:
       resources:
         limits:
-          memory: 256M
+          memory: 1G          # virus definition database requires ~800 MB
           cpus: "0.5"
     restart: unless-stopped
     networks:
       - ai-bridge
 
+  # ── MockPass — DISABLED (2026-06-13) ─────────────────────────
+  # Auth moved to built-in /auth/demo in Next.js app.
+  # Re-enable for NDI integration testing:
+  # mockpass:
+  #   image: node:20-alpine
+  #   container_name: mockpass
+  #   working_dir: /app
+  #   command: sh -c "npm install --silent @opengovsg/mockpass && npx mockpass"
+  #   environment:
+  #     - SHOW_LOGIN_PAGE=true
+  #     - MOCKPASS_PORT=5156
+  #   ports:
+  #     - "5156:5156"
+  #   healthcheck:
+  #     test: ["CMD", "wget", "-qO-", "http://localhost:5156/singpass/v3/fapi/.well-known/openid-configuration"]
+  #     interval: 15s
+  #     timeout: 5s
+  #     retries: 5
+  #     start_period: 30s
+  #   security_opt:
+  #     - no-new-privileges:true
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 256M
+  #         cpus: "0.5"
+  #   restart: unless-stopped
+  #   networks:
+  #     - ai-bridge
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: mps-postgres
+    environment:
+      - POSTGRES_USER=mps
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-mps_secret}
+      - POSTGRES_DB=mps_connect
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mps"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - mps-db-data:/var/lib/postgresql/data
+    networks:
+      - ai-bridge
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: mps-redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - ai-bridge
+    restart: unless-stopped
+
 networks:
   ai-bridge:
     external: true
+
+volumes:
+  mps-db-data:
+  audit-data:    # SQLite audit chain for mps-ai-proxy (prev_hash chained)

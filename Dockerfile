@@ -1,24 +1,46 @@
+# ── Stage 1: Dependencies ─────────────────────────────────────
+FROM node:20-alpine AS deps
+WORKDIR /app
+
+COPY package.json package-lock.json* ./
+# ci installs exact versions from lockfile — deterministic builds
+RUN npm ci --ignore-scripts
+
+# ── Stage 2: Build ────────────────────────────────────────────
 FROM node:20-alpine AS builder
 WORKDIR /app
-COPY package.json package-lock.json* ./
-RUN npm ci
 
+COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-ARG VITE_OLLAMA_HOST
-ARG VITE_OLLAMA_MODEL
-ARG VITE_SPEECH_HOST
-ARG VITE_STAFF_ACCESS_CODE
-ENV VITE_OLLAMA_HOST=$VITE_OLLAMA_HOST
-ENV VITE_OLLAMA_MODEL=$VITE_OLLAMA_MODEL
-ENV VITE_SPEECH_HOST=$VITE_SPEECH_HOST
-ENV VITE_STAFF_ACCESS_CODE=$VITE_STAFF_ACCESS_CODE
+# Exclude the AI proxy — it's a separate container
+# Exclude archive — not needed in build
+RUN rm -rf api .archive-vite-app .ai-arch
 
-RUN npm run build
+# Next.js standalone output — only runtime files in final image
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN mkdir -p public && npm run build
 
-FROM nginx:alpine
-RUN apk add --no-cache curl
-COPY --from=builder /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
+# ── Stage 3: Runtime ──────────────────────────────────────────
+FROM node:20-alpine AS runner
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+
+# Non-root user — principle of least privilege
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser  --system --uid 1001 nextjs
+
+# Copy only what Next.js standalone needs
+COPY --from=builder /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+USER nextjs
+EXPOSE 3000
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+
+# next start handles graceful shutdown
+CMD ["node", "server.js"]

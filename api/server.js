@@ -9,24 +9,43 @@
 const express      = require('express');
 const crypto       = require('crypto');
 const cookieParser = require('cookie-parser');
+const multer       = require('multer');
+const FormData     = require('form-data');
+const http         = require('http');
+const { initDB, pool } = require('./db');
+const { causalityQueue } = require('./queue');
+const { writeAuditEvent } = require('./audit');  // immutable SQLite audit log
 const app          = express();
+const upload       = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+// Initialize Database
+initDB();
 
 app.use(express.json({ limit: '512kb' }));
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 
 // ── Config (server-side only — never sent to browser) ────────
-const OLLAMA_ENDPOINT = process.env.OLLAMA_ENDPOINT || 'http://100.x.x.x:11434/api/chat';
-const AI_MODEL        = process.env.AI_MODEL        || 'gemma4:12b-mlx';
+const OLLAMA_ENDPOINT = process.env.OLLAMA_ENDPOINT || 'http://localhost:11434/api/chat';
+const OLLAMA_GENERATE = process.env.OLLAMA_GENERATE || 'http://localhost:11434/api/generate';
+const AI_MODEL        = process.env.AI_MODEL        || 'gemma4:e4b';
 const PORT            = parseInt(process.env.PORT   || '3100', 10);
+const WYOMING_BRIDGE  = process.env.WYOMING_BRIDGE  || 'http://wyoming-bridge:10500';
+
+// IMDA Agentic AI Framework Dim.1 — Emergency AI kill switch
+// Set AI_KILL_SWITCH=true to disable all AI endpoints without full service outage
+const AI_KILL_SWITCH  = (process.env.AI_KILL_SWITCH || 'false').toLowerCase() === 'true';
+if (AI_KILL_SWITCH) {
+  console.warn('[KILL SWITCH] AI endpoints are DISABLED. Set AI_KILL_SWITCH=false and restart to re-enable.');
+}
 
 // Only accept requests from the nginx container on the same network
 const ALLOWED_ORIGINS = [
   'http://127.0.0.1',
   'http://localhost',
   'http://mps-connect',
-  'https://mps-connect.thegeekybeng.com',
-];
+  process.env.APP_URL,
+].filter(Boolean);
 
 // ── PII masking (Singapore-specific) ─────────────────────────
 const PII_RULES = [
@@ -211,8 +230,10 @@ If a resident says something like "what are you talking about?", "你在讲什�
 }
 
 // ── AI audit log ──────────────────────────────────────────────
+// auditLog delegates to the persistent SQLite chain in audit.js
+// and still emits to stdout for Docker log capture
 function auditLog(type, meta) {
-  console.log(JSON.stringify({ ts: new Date().toISOString(), type, ...meta }));
+  writeAuditEvent(type, meta);
 }
 
 // Simple language detector — for audit signal only, no PII
@@ -245,6 +266,20 @@ app.use((req, res, next) => {
   if (origin && !ALLOWED_ORIGINS.some(o => origin.startsWith(o))) {
     auditLog('BLOCKED_ORIGIN', { origin });
     return res.status(403).json({ error: 'Forbidden' });
+  }
+  next();
+});
+
+// ── Kill switch middleware (IMDA Agentic AI Dim.1) ────────────
+// When active, all /api/ai/* endpoints return 503 immediately.
+// /health and non-AI routes remain operational.
+app.use('/api/ai', (req, res, next) => {
+  if (AI_KILL_SWITCH) {
+    auditLog('KILL_SWITCH_BLOCKED', { endpoint: req.path, method: req.method });
+    return res.status(503).json({
+      error: 'AI services are temporarily disabled by the system administrator.',
+      killSwitch: true,
+    });
   }
   next();
 });
@@ -283,7 +318,7 @@ app.post('/api/ai/chat', async (req, res) => {
         stream: false,
         options: { temperature: 0.4 },
       }),
-      signal: AbortSignal.timeout(30_000),
+      signal: AbortSignal.timeout(60_000),
     });
 
     if (!resp.ok) throw new Error(`Ollama ${resp.status}`);
@@ -370,7 +405,7 @@ Return JSON with EXACTLY these fields:
         format: 'json',
         options: { temperature: 0.3 },
       }),
-      signal: AbortSignal.timeout(30_000),
+      signal: AbortSignal.timeout(60_000),
     });
 
     if (!resp.ok) throw new Error(`Ollama ${resp.status}`);
@@ -482,6 +517,12 @@ app.post('/api/ai/explain', async (req, res) => {
     res.status(503).json({ error: 'AI service temporarily unavailable' });
   }
 });
+
+// ── REMOVED: Legacy staff auth (ADR-008) ─────────────────────
+// POST /api/staff/login, GET /api/staff/cases, and verifyStaff
+// middleware were removed. Staff auth is now handled entirely
+// by the Next.js app via lib/auth.ts (JWT + bcrypt + RBAC).
+// Removal date: 2026-06-12. See HANDOFF.md §6.6.
 
 // ── Causality Engine — inline helpers ────────────────────────
 // Ported from CWI: constants/causalityDomains.ts + agencyTemplates.ts + letterGenerator.ts
@@ -668,7 +709,7 @@ app.post('/api/ai/causality', async (req, res) => {
       65_000
     );
 
-    // Stage 5+6+7: Action — urgency + routing + document queue
+    // Stage 5+6+7: Action — urgency + routing + document queue + document requirements
     const action = await ollamaJSON(
       `You are ${d.analystPersona}.\n\nNODES:\n${JSON.stringify(reasoning.nodes || [])}\n\n` +
       `GAPS:\n${JSON.stringify(reasoning.gaps || [])}\n\n` +
@@ -679,20 +720,24 @@ app.post('/api/ai/causality', async (req, res) => {
       `"agencyRoutes": [{ "agency", "priority", "addressesNodeIds", "specificAsk", "estimatedProcessingDays", "prerequisiteAgencies" }]\n` +
       `priority: "primary"|"secondary"|"long_term"\n\n` +
       `"documentQueue": [{ "order", "type", "agency", "subject", "urgency", "dependsOn" }]\n` +
-      `type: "letter"|"referral"|"internal_note"|"follow_up"\n\nRules:\n${d.actionRules}`,
-      `You are ${d.analystPersona}. Score urgency and route to agencies. Return only valid JSON.`,
+      `type: "letter"|"referral"|"internal_note"|"follow_up"\n\n` +
+      `"documentRequirements": [{ "agency", "documentType", "reason", "relatedNodeIds", "required", "sourceType", "sourceInstitution" }]\n` +
+      `sourceType: "resident"|"government_request" — use government_request only for SingHealth/NHG/public hospitals\n` +
+      `required: true if absence blocks the case; false if it strengthens but is not blocking\n\nRules:\n${d.actionRules}`,
+      `You are ${d.analystPersona}. Score urgency, route to agencies, and list required documents. Return only valid JSON.`,
       65_000
     );
 
     const causalGraph = {
-      entities:      foundation.entities      || [],
-      timeline:      foundation.timeline      || [],
-      nodes:         reasoning.nodes          || [],
-      gaps:          reasoning.gaps           || [],
-      urgency:       action.urgency           || { overall: 'Low', rationale: '', timeSensitiveFactors: [], criticalPathNodeIds: [] },
-      agencyRoutes:  action.agencyRoutes      || [],
-      documentQueue: action.documentQueue     || [],
-      engineVersion: '2.2.0-mps',
+      entities:             foundation.entities      || [],
+      timeline:             foundation.timeline      || [],
+      nodes:                reasoning.nodes          || [],
+      gaps:                 reasoning.gaps           || [],
+      urgency:              action.urgency           || { overall: 'Low', rationale: '', timeSensitiveFactors: [], criticalPathNodeIds: [] },
+      agencyRoutes:         action.agencyRoutes      || [],
+      documentQueue:        action.documentQueue     || [],
+      documentRequirements: action.documentRequirements || [],  // Phase 2 — demand-driven doc list
+      engineVersion: '2.3.0-mps',
       processedAt:   new Date().toISOString(),
     };
 
@@ -710,232 +755,265 @@ app.post('/api/ai/causality', async (req, res) => {
   }
 });
 
-// =============================================================
-// Singpass FAPI v3 Auth Module
-// MockPass (dev) → real NDI (production) by swapping SINGPASS_BASE_URL.
-// Browser never touches tokens. All crypto is server-side.
+// ═══════════════════════════════════════════════════════════════
+// DORMANT: Singpass FAPI v3 Auth Module
+// Re-enable when real NDI endpoints are available.
+// MockPass dev auth replaced by /auth/demo in Next.js app.
+// Disabled: 2026-06-13
 //
-// DEV KEYS: The RP keys below are the published MockPass development
-// keypair (github.com/opengovsg/mockpass static/certs/fapi-rp-private.json).
-// They are intentionally public. Replace via RP_KEYS env var for production.
-// =============================================================
+// This block contained:
+// - OIDC FAPI v3 with PAR, DPoP, JAR, PKCE
+// - MockPass dev RP keys (public, from github.com/opengovsg/mockpass)
+// - /auth/singpass/start — browser redirect to MockPass/NDI
+// - /auth/singpass/callback — code exchange, JWE decrypt, JWS verify
+// - /auth/session — session check
+// - /auth/role-select — demo staff role picker
+// - /auth/logout — session teardown
+// - In-memory session store (pendingAuth, sessions Maps)
+//
+// To restore: uncomment the block below and re-add mockpass
+// service to docker-compose.yml. See git history for full code.
+// ═══════════════════════════════════════════════════════════════
 
-const SP_BASE       = process.env.SINGPASS_BASE_URL   || 'http://mockpass:5156';
-const SP_CLIENT     = process.env.SINGPASS_CLIENT_ID  || 'mps-connect';
-const SP_REDIRECT   = process.env.SINGPASS_REDIRECT_URI
-                        || 'https://mps-connect.thegeekybeng.com/auth/singpass/callback';
-const SESSION_COOKIE = 'mps_session';
-const SESSION_TTL    = 30 * 60 * 1000;  // 30 minutes
-const PKCE_TTL       = 5  * 60 * 1000;  // 5 minutes
-
-// Published MockPass dev RP keys — NOT secrets (in public repo)
-const MOCKPASS_RP_JWKS = {
-  keys: [
-    { kty:'EC', crv:'P-256', use:'sig', alg:'ES256', kid:'fapi-rp-sig-key-01',
-      x:'tkRXMLpC7djlH7cqntg8-fuekxG9YTvJx8IsRKApcAg',
-      y:'elyS0xZn3ymk65tVPYO3pZplEaOEZtj_RegJ3_cwq7A',
-      d:'uRwK14a2icjic0DSFsOG2PgKgqfZobaqhjgGS0wbkho' },
-    { kty:'EC', crv:'P-256', use:'enc', alg:'ECDH-ES+A256KW', kid:'fapi-rp-enc-key-01',
-      x:'fvSpp2PLnde3dtY8VpY881WUxijtSqmhu4daeavEuKQ',
-      y:'LzH6bK3nxZFPh8tPLjUN0EMYnIgQjkyUiafh4Eafmw8',
-      d:'wqtEFMSkoWeYqfZ-aqbSn5CE2KmgqWZgxrowWQaHCXA' },
-  ],
-};
-
-// Lazy-loaded CryptoKeys and SP JWKS
-let _rpSigKey = null;
-let _rpEncKey = null;
-let _spJwks   = null;  // MockPass server public keys for JWS verification
-
-async function loadJose() {
-  // jose v5 is ESM-only; dynamic import works inside CJS async functions.
-  return import('jose');
-}
-
-async function initRPKeys() {
-  if (_rpSigKey && _rpEncKey) return;
-  const { importJWK } = await loadJose();
-  _rpSigKey = await importJWK(MOCKPASS_RP_JWKS.keys[0], 'ES256');
-  _rpEncKey = await importJWK(MOCKPASS_RP_JWKS.keys[1], 'ECDH-ES+A256KW');
-  auditLog('SINGPASS_KEYS_LOADED', { mode: 'mockpass-dev-keys' });
-}
-
-async function fetchSPJwks() {
-  if (_spJwks) return _spJwks;
-  const cfg = await (await fetch(
-    `${SP_BASE}/singpass/v3/fapi/.well-known/openid-configuration`,
-    { signal: AbortSignal.timeout(8_000) },
-  )).json();
-  _spJwks = await (await fetch(cfg.jwks_uri, { signal: AbortSignal.timeout(8_000) })).json();
-  auditLog('SP_JWKS_FETCHED', { issuer: cfg.issuer });
-  return _spJwks;
-}
-
-// In-memory stores (sufficient for single-instance dev; replace with Redis for HA prod)
-const pendingAuth = new Map(); // state → { codeVerifier, nonce, expiresAt }
-const sessions    = new Map(); // sessionId → { nricMasked, nricHash, expiresAt }
-
-setInterval(() => {
-  const now = Date.now();
-  for (const [k, v] of pendingAuth) if (v.expiresAt < now) pendingAuth.delete(k);
-  for (const [k, v] of sessions)    if (v.expiresAt < now) sessions.delete(k);
-}, 5 * 60 * 1000);
-
-function maskNRIC(nric) {
-  if (!nric || nric.length < 5) return '****';
-  return `${nric[0]}****${nric.slice(-4)}`;
-}
-function genVerifier()  { return crypto.randomBytes(32).toString('base64url'); }
-function genChallenge(v) {
-  return crypto.createHash('sha256').update(v).digest().toString('base64url');
-}
-
-// ── GET /auth/singpass/start ──────────────────────────────────────────
-app.get('/auth/singpass/start', async (req, res) => {
-  try {
-    await initRPKeys();
-    const { SignJWT } = await loadJose();
-
-    const codeVerifier  = genVerifier();
-    const codeChallenge = genChallenge(codeVerifier);
-    const state         = crypto.randomUUID();
-    const nonce         = crypto.randomUUID();
-
-    pendingAuth.set(state, { codeVerifier, nonce, expiresAt: Date.now() + PKCE_TTL });
-
-    // JAR — signed authorization request
-    const jar = await new SignJWT({
-      response_type: 'code', client_id: SP_CLIENT, redirect_uri: SP_REDIRECT,
-      scope: 'openid', state, nonce,
-      code_challenge: codeChallenge, code_challenge_method: 'S256',
-    })
-      .setProtectedHeader({ alg: 'ES256', kid: 'fapi-rp-sig-key-01' })
-      .setIssuedAt().setExpirationTime('2m')
-      .sign(_rpSigKey);
-
-    const parResp = await fetch(`${SP_BASE}/singpass/v3/fapi/par`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ client_id: SP_CLIENT, request: jar, redirect_uri: SP_REDIRECT }).toString(),
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!parResp.ok) throw new Error(`PAR ${parResp.status}: ${(await parResp.text()).slice(0,200)}`);
-
-    const { request_uri } = await parResp.json();
-    auditLog('SINGPASS_START', { state: state.slice(0,8) });
-
-    const authUrl = new URL(`${SP_BASE}/singpass/v3/fapi/auth`);
-    authUrl.searchParams.set('client_id', SP_CLIENT);
-    authUrl.searchParams.set('request_uri', request_uri);
-    res.redirect(authUrl.toString());
-  } catch (err) {
-    auditLog('SINGPASS_START_ERR', { msg: err.message });
-    res.redirect('/?singpass=error&reason=init_failed');
-  }
-});
-
-// ── GET /auth/singpass/callback ───────────────────────────────────────
-app.get('/auth/singpass/callback', async (req, res) => {
-  const { code, state, error } = req.query;
-
-  if (error) {
-    auditLog('SINGPASS_CB_ERROR', { error });
-    return res.redirect(`/?singpass=error&reason=${encodeURIComponent(String(error))}`);
-  }
-  if (!code || !state || typeof state !== 'string') {
-    return res.redirect('/?singpass=error&reason=invalid_callback');
+// ── POST /api/ai/transcribe ───────────────────────────────────
+// STT: accepts audio file → Wyoming Bridge → transcription text
+// Audit: STT_TRANSCRIBE or STT_ERROR
+app.post('/api/ai/transcribe', upload.single('audio'), async (req, res) => {
+  const ipHash = crypto.createHash('sha256').update(req.ip || '').digest('hex').slice(0, 12);
+  if (!rateLimit(ipHash, 30, 60_000)) {
+    auditLog('RATE_LIMIT', { endpoint: '/api/ai/transcribe', ipHash });
+    return res.status(429).json({ error: 'Rate limit exceeded' });
   }
 
-  const pending = pendingAuth.get(state);
-  if (!pending || pending.expiresAt < Date.now()) {
-    pendingAuth.delete(state);
-    return res.redirect('/?singpass=error&reason=state_expired');
+  if (!req.file) {
+    return res.status(400).json({ error: 'No audio file provided' });
   }
-  pendingAuth.delete(state);
+
+  const audioSizeBytes = req.file.size;
+  const sessionId = req.body.sessionId || null;
 
   try {
-    await initRPKeys();
-    const { SignJWT, compactDecrypt, importJWK, jwtVerify } = await loadJose();
-    const spJwks = await fetchSPJwks();
-    const tokenEndpoint = `${SP_BASE}/singpass/v3/fapi/token`;
-
-    // Client assertion for private_key_jwt auth
-    const clientAssertion = await new SignJWT({ sub: SP_CLIENT, aud: tokenEndpoint, jti: crypto.randomUUID() })
-      .setProtectedHeader({ alg: 'ES256', kid: 'fapi-rp-sig-key-01' })
-      .setIssuer(SP_CLIENT).setIssuedAt().setExpirationTime('2m')
-      .sign(_rpSigKey);
-
-    const tokenResp = await fetch(tokenEndpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        grant_type: 'authorization_code', client_id: SP_CLIENT,
-        code: String(code), redirect_uri: SP_REDIRECT,
-        code_verifier: pending.codeVerifier,
-        client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
-        client_assertion: clientAssertion,
-      }).toString(),
-      signal: AbortSignal.timeout(15_000),
+    // Forward audio to Wyoming Bridge /transcribe as multipart
+    const form = new FormData();
+    form.append('audio', req.file.buffer, {
+      filename: req.file.originalname || 'recording.webm',
+      contentType: req.file.mimetype || 'audio/webm',
     });
-    if (!tokenResp.ok) throw new Error(`Token ${tokenResp.status}: ${(await tokenResp.text()).slice(0,200)}`);
 
-    const { id_token } = await tokenResp.json();
-    if (!id_token) throw new Error('No id_token in response');
+    const bridgeUrl = new URL('/transcribe', WYOMING_BRIDGE);
+    const bridgeRes = await fetch(bridgeUrl.toString(), {
+      method: 'POST',
+      body: form,
+      headers: form.getHeaders(),
+      signal: AbortSignal.timeout(60_000),
+    });
 
-    // Decrypt JWE → inner JWS
-    const { plaintext } = await compactDecrypt(id_token, _rpEncKey);
-    const innerJwt = new TextDecoder().decode(plaintext);
-
-    // Verify inner JWS against SP server public key(s)
-    let nric = null;
-    for (const jwk of spJwks.keys) {
-      try {
-        const spKey = await importJWK(jwk, jwk.alg);
-        const { payload } = await jwtVerify(innerJwt, spKey, { clockTolerance: 30 });
-        nric = String(payload.sub || payload['https://api.singpass.gov.sg/sub'] || '');
-        if (nric) break;
-      } catch { /* try next key */ }
+    if (!bridgeRes.ok) {
+      const errText = await bridgeRes.text();
+      auditLog('STT_ERROR', { sessionId, ipHash, audioSizeBytes, errorMessage: errText.slice(0, 200) });
+      return res.status(502).json({ error: 'Transcription service error' });
     }
-    if (!nric) throw new Error('NRIC not in verified id_token');
 
-    // Create session — store only masked NRIC + hash, never plaintext
-    const sessionId  = crypto.randomUUID();
-    const nricHash   = crypto.createHash('sha256').update(nric).digest('hex');
-    sessions.set(sessionId, { nricMasked: maskNRIC(nric), nricHash, expiresAt: Date.now() + SESSION_TTL });
+    const data = await bridgeRes.json();
+    const maskedText = maskPII(data.text || '');
 
-    auditLog('SINGPASS_AUTH_OK', { nricHash: nricHash.slice(0,8) });
-
-    res.cookie(SESSION_COOKIE, sessionId, {
-      httpOnly: true, sameSite: 'Lax',
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: SESSION_TTL,
+    auditLog('STT_TRANSCRIBE', {
+      sessionId,
+      ipHash,
+      audioSizeBytes,
+      detectedLanguage: data.language || 'unknown',
+      transcriptionText: maskedText.slice(0, 500),
+      whisperModel: 'faster-whisper-small-int8',
+      inputLen: audioSizeBytes,
+      outputLen: (data.text || '').length,
     });
-    res.redirect('/?singpass=success');
+
+    return res.json({
+      text: data.text || '',
+      language: data.language || 'unknown',
+    });
+
   } catch (err) {
-    auditLog('SINGPASS_CB_FAIL', { msg: err.message });
-    res.redirect('/?singpass=error&reason=auth_failed');
+    const errMsg = err.name === 'TimeoutError' ? 'Transcription timed out' : err.message;
+    auditLog('STT_ERROR', { sessionId, ipHash, audioSizeBytes, errorMessage: errMsg });
+    return res.status(504).json({ error: errMsg });
   }
 });
 
-// ── GET /auth/session ───────────────────────────────────────────────
-app.get('/auth/session', (req, res) => {
-  const sid = req.cookies[SESSION_COOKIE];
-  if (!sid) return res.json({ authenticated: false });
-  const session = sessions.get(sid);
-  if (!session || session.expiresAt < Date.now()) {
-    sessions.delete(sid);
-    res.clearCookie(SESSION_COOKIE);
-    return res.json({ authenticated: false });
+// ── POST /api/ai/synthesize ───────────────────────────────────
+// TTS: accepts text → Wyoming Bridge → WAV audio bytes
+// Audit: TTS_SYNTHESIZE or TTS_ERROR
+app.post('/api/ai/synthesize', async (req, res) => {
+  const ipHash = crypto.createHash('sha256').update(req.ip || '').digest('hex').slice(0, 12);
+  if (!rateLimit(ipHash, 30, 60_000)) {
+    auditLog('RATE_LIMIT', { endpoint: '/api/ai/synthesize', ipHash });
+    return res.status(429).json({ error: 'Rate limit exceeded' });
   }
-  res.json({ authenticated: true, nricMasked: session.nricMasked });
+
+  const { text, sessionId } = req.body;
+  if (!text || !text.trim()) {
+    return res.status(400).json({ error: 'Empty text' });
+  }
+
+  // Cap TTS input to 2000 chars to prevent abuse
+  const cappedText = text.slice(0, 2000);
+
+  // Strip markdown/formatting so TTS reads clean natural text
+  const ttsText = cappedText
+    .replace(/```[\s\S]*?```/g, '')         // code blocks
+    .replace(/`([^`]+)`/g, '$1')            // inline code
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // [text](url) → text
+    .replace(/^#{1,6}\s+/gm, '')            // headings
+    .replace(/\*{2,}([^*]+)\*{2,}/g, '$1')  // bold (**text** or ***text***)
+    .replace(/_{2,}([^_]+)_{2,}/g, '$1')    // bold alt (__text__)
+    .replace(/\*([^*]+)\*/g, '$1')          // italic
+    .replace(/_([^_]+)_/g, '$1')            // italic alt
+    .replace(/~~([^~]+)~~/g, '$1')          // strikethrough
+    .replace(/^\s*[-*+]\s+/gm, '')          // bullet points
+    .replace(/^\s*\d+\.\s+/gm, '')          // numbered lists
+    .replace(/^\s*>\s?/gm, '')              // blockquotes
+    .replace(/\|/g, ',')                    // table pipes → commas
+    .replace(/---+/g, '')                   // horizontal rules
+    // Strip Singlish particles — Piper mispronounces them
+    .replace(/[,.]?\s*\b(lah|leh|lor|loh|sia|wah|aiyo|aiyoh|hor|meh|hah|arh|nia)\b[,.]?\s*/gi, ' ')
+    .replace(/\s*,\s*([.?!])/g, '$1')       // clean ", ?" → "?"
+    .replace(/\s+([.?!])/g, '$1')            // clean " ?" → "?"
+    .replace(/\s{2,}/g, ' ')                 // collapse double spaces
+    .replace(/\n{3,}/g, '\n\n')             // collapse multiple newlines
+    .trim();
+
+  try {
+    const bridgeUrl = new URL('/synthesize', WYOMING_BRIDGE);
+    const bridgeRes = await fetch(bridgeUrl.toString(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: ttsText }),
+      signal: AbortSignal.timeout(30_000),
+    });
+
+    if (!bridgeRes.ok) {
+      const errText = await bridgeRes.text();
+      auditLog('TTS_ERROR', { sessionId, ipHash, inputLen: cappedText.length, errorMessage: errText.slice(0, 200) });
+      return res.status(502).json({ error: 'Speech synthesis error' });
+    }
+
+    const audioBuffer = Buffer.from(await bridgeRes.arrayBuffer());
+
+    auditLog('TTS_SYNTHESIZE', {
+      sessionId,
+      ipHash,
+      inputText: maskPII(cappedText).slice(0, 300),
+      inputLen: cappedText.length,
+      outputLen: audioBuffer.length,
+      piperModel: 'en_US-hfc_female-medium',
+      voice: 'en_US',
+    });
+
+    res.set({
+      'Content-Type': 'audio/wav',
+      'Content-Length': audioBuffer.length,
+      'Cache-Control': 'no-store',
+    });
+    return res.send(audioBuffer);
+
+  } catch (err) {
+    const errMsg = err.name === 'TimeoutError' ? 'Speech synthesis timed out' : err.message;
+    auditLog('TTS_ERROR', { sessionId, ipHash, inputLen: cappedText.length, errorMessage: errMsg });
+    return res.status(504).json({ error: errMsg });
+  }
 });
 
-// ── POST /auth/logout ─────────────────────────────────────────────────
-app.post('/auth/logout', (req, res) => {
-  const sid = req.cookies[SESSION_COOKIE];
-  if (sid) { sessions.delete(sid); auditLog('SINGPASS_LOGOUT', {}); }
-  res.clearCookie(SESSION_COOKIE);
-  res.json({ ok: true });
+// ── POST /api/ai/translate ────────────────────────────────────
+// Translation via Ollama: text + sourceLang → English
+// Audit: TRANSLATE
+app.post('/api/ai/translate', async (req, res) => {
+  const ipHash = crypto.createHash('sha256').update(req.ip || '').digest('hex').slice(0, 12);
+  if (!rateLimit(ipHash, 30, 60_000)) {
+    auditLog('RATE_LIMIT', { endpoint: '/api/ai/translate', ipHash });
+    return res.status(429).json({ error: 'Rate limit exceeded' });
+  }
+
+  const { text, sourceLang, targetLang, sessionId } = req.body;
+  if (!text || !text.trim()) {
+    return res.status(400).json({ error: 'Empty text' });
+  }
+
+  const langNames = { zh: 'Chinese', ms: 'Malay', ta: 'Tamil', singlish: 'Singlish', en: 'English' };
+  const srcName = langNames[sourceLang] || sourceLang || 'the original language';
+  const tgtName = langNames[targetLang] || targetLang || 'English';
+
+  try {
+    const ollamaRes = await fetch(OLLAMA_GENERATE, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: AI_MODEL,
+        prompt: `Translate the following text from ${srcName} to ${tgtName}. Return ONLY the translated text, nothing else.\n\nText: ${text.slice(0, 2000)}`,
+        stream: false,
+      }),
+      signal: AbortSignal.timeout(30_000),
+    });
+
+    if (!ollamaRes.ok) {
+      return res.status(502).json({ error: 'Translation service error' });
+    }
+
+    const data = await ollamaRes.json();
+    const translatedText = (data.response || '').trim();
+
+    auditLog('TRANSLATE', {
+      sessionId,
+      ipHash,
+      sourceLanguage: sourceLang,
+      targetLanguage: targetLang || 'en',
+      sourceText: maskPII(text).slice(0, 300),
+      translatedText: maskPII(translatedText).slice(0, 300),
+      ollamaModel: AI_MODEL,
+      inputLen: text.length,
+      outputLen: translatedText.length,
+    });
+
+    return res.json({
+      translatedText,
+      sourceLang: sourceLang || 'unknown',
+      targetLang: targetLang || 'en',
+    });
+
+  } catch (err) {
+    const errMsg = err.name === 'TimeoutError' ? 'Translation timed out' : err.message;
+    return res.status(504).json({ error: errMsg });
+  }
+});
+
+// ── GET /api/ai/voice-trail/:sessionId ────────────────────────
+// Staff endpoint: returns all STT/TTS/TRANSLATE audit events for a session
+app.get('/api/ai/voice-trail/:sessionId', async (req, res) => {
+  const { sessionId } = req.params;
+  if (!sessionId) return res.status(400).json({ error: 'Missing sessionId' });
+
+  try {
+    // Query audit DB for voice-related events
+    const { db: auditDb } = require('./audit');
+    if (!auditDb) return res.json({ events: [] });
+
+    const events = auditDb.prepare(
+      `SELECT id, ts, event_type, detail FROM audit_events
+       WHERE session_id = ? AND event_type IN ('STT_TRANSCRIBE', 'STT_ERROR', 'TTS_SYNTHESIZE', 'TTS_ERROR', 'TRANSLATE')
+       ORDER BY id ASC`
+    ).all(sessionId);
+
+    return res.json({
+      events: events.map(e => ({
+        id: e.id,
+        timestamp: e.ts,
+        type: e.event_type,
+        detail: JSON.parse(e.detail || '{}'),
+      })),
+    });
+
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to query voice trail' });
+  }
 });
 
 // ── Health ────────────────────────────────────────────────────

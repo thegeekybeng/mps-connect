@@ -1,0 +1,32 @@
+# Dependencies — never in the image
+node_modules
+.npm
+
+# Old Vite app archive
+.archive-vite-app
+
+# Architecture repo — internal notes, not needed in image
+.ai-arch
+
+# Next.js build output (builder stage handles this)
+.next
+out
+
+# Env secrets
+.env
+.env.*
+
+# Git
+.git
+.gitignore
+.github
+
+# Editor
+.vscode
+.idea
+
+# Logs
+*.log
+
+# AI proxy builds separately from ./api
+# Do NOT exclude api/ — docker-compose builds it separately with its own context

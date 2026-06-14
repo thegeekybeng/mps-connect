@@ -24,30 +24,152 @@ Staff get a unified dashboard with all incoming cases. Pre-session triage is don
 - Urgent case flagging — enabling immediate action before the next physical session
 - **Branch locator and MP identifier** — routes each resident to the correct MP branch and session schedule based on their postal code, mapped against the full 97-branch post-GE2025 constituency registry
 - Staff dashboard with full case view, case history, and document management
-- Consent gate before any AI interaction (privacy and demo disclosure)
+- PDPA-compliant consent gate before any AI interaction (privacy and demo disclosure)
 - Reference number per submission — no lost cases
 - **Case Writer Intelligence panel** — 3-stage causality engine (Foundation → Reasoning → Action) producing a structured `CausalGraph`: urgency assessment, root cause identification, hidden risk detection, information gap analysis, and agency routing with confidence scoring per causal node
 - **Multi-agency correspondence** — per-agency appeal letters generated deterministically from the `CausalGraph`; each letter is domain-weighted, agency-specific, sequenced by the document queue, and PDPA-compliant (resident PII held as `██` placeholders, completed by the writer inside gather.gov.sg)
 - **Copy to Gather bridge** — letters copied to clipboard for submission via gather.gov.sg; governance gate holds the copy action until MP or administrator approval is granted
 - Human-in-the-loop governance — five mandatory review gates ensuring no AI decision reaches formal correspondence without verified human sign-off
 - Immutable audit trail — cryptographically chained case event log with SLA tracking per agency; distinguishes automated receipt acknowledgement (`AGY-RCV`) from substantive response (`AGY-RSP`)
+- **RBAC** — 5 roles (admin, writer, approver, registry, mp) with granular permission control
 
-## Tech stack
+---
+
+## Tech Stack
 
 | Layer | Technology |
 | --- | --- |
-| Frontend | React + TypeScript + Vite |
+| Frontend | Next.js 15 (App Router) + TypeScript |
+| Database | PostgreSQL 15 with row-level audit trail |
 | AI proxy | Node.js + Express (server-side, internal only) |
-| AI inference | Ollama — `gemma4:e2b` (local network, via server-side proxy) |
+| AI inference | Ollama — `gemma4:e2b` (configurable via env var) |
 | Speech-to-text | Wyoming Whisper via FastAPI bridge |
 | Text-to-speech | Wyoming Piper via FastAPI bridge |
+| File scanning | ClamAV daemon |
 | Containerisation | Docker Compose |
+
+---
+
+## Pages
+
+| Page | Route | Description |
+|------|-------|-------------|
+| Landing | `/` | Branch locator — postal code → constituency → MP |
+| Resident Chat | `/chat` | AI-assisted case intake (voice + text) |
+| Dashboard | `/dashboard` | KPI tiles, recent cases, queue summary |
+| Cases List | `/dashboard/cases` | Urgency-sorted list, status filters, search |
+| Case Detail | `/dashboard/cases/[id]` | Full case view, causality panel, approval bar |
+| Approvals | `/dashboard/approvals` | 4-tab accordion workspace for MP review |
+| AI Agent | `/dashboard/agent` | Structured AI explainability panel |
+| Queue | `/dashboard/queue` | Walk-in session management |
+| Analytics | `/dashboard/analytics` | Monthly bar chart, category breakdown, 1M/3M/6M toggle |
+| Agent Settings | `/dashboard/settings/agent` | AI approval preferences |
+
+---
+
+## Setup
+
+### Prerequisites
+
+- Docker and Docker Compose
+- Ollama running with `gemma4:e2b` pulled (or any OpenAI-compatible endpoint)
+- `ai-bridge` Docker network (create with `docker network create ai-bridge` if it doesn't exist)
+
+### Environment
+
+Copy `.env.example` to `.env` and configure:
+
+```env
+POSTGRES_PASSWORD=your-db-password
+JWT_SECRET=your-32-char-minimum-secret
+VITE_STAFF_ACCESS_CODE=your-chosen-code
+OLLAMA_ENDPOINT=http://<ollama-host>:11434/api/chat
+AI_MODEL=gemma4:e2b
+APP_URL=http://localhost:3080
+```
+
+### Run
+
+```bash
+docker compose up -d
+```
+
+App available at `http://localhost:3080`. Health checks:
+
+```bash
+curl http://localhost:3080/api/health     # {"status":"ok","db":"connected"}
+curl http://localhost:3103/health         # {"status":"ok","service":"mps-ai-proxy"}
+```
+
+### Seed Data
+
+```bash
+# Load 97 GE2025 constituencies + 300 sample cases
+docker exec -i mps-postgres psql -U mps -d mps_connect < ./db/seed_cases_300.sql
+```
+
+---
+
+## Configuration
+
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `POSTGRES_PASSWORD` | PostgreSQL password | `mps_secret` |
+| `JWT_SECRET` | JWT signing secret (min 32 chars) | — |
+| `VITE_STAFF_ACCESS_CODE` | Staff portal access code | — |
+| `OLLAMA_ENDPOINT` | Ollama chat API URL (server-side proxy only) | `http://localhost:11434/api/chat` |
+| `AI_MODEL` | Ollama model name | `gemma4:e4b` |
+| `APP_URL` | Public URL for CORS and upload links | `http://localhost:3080` |
+| `AI_KILL_SWITCH` | Emergency AI disable (IMDA Dim.1 compliance) | `false` |
+| `NODE_ENV` | Node environment | `production` |
+
+---
+
+## Project Structure
+
+```
+mps-connect/
+├── app/                    # Next.js App Router pages + server actions
+│   ├── actions/            # Server actions (agent, approvals, auth, cases, etc.)
+│   ├── api/                # API routes (health, upload, postal-lookup)
+│   ├── dashboard/          # Staff dashboard pages
+│   ├── chat/               # Resident chat interface
+│   └── auth/               # Demo auth flow
+├── components/             # React components by domain
+│   ├── agent/              # AI agent panel
+│   ├── approvals/          # Approval workspace
+│   ├── cases/              # Case management
+│   ├── chat/               # Chat UI + voice
+│   ├── documents/          # Document upload/management
+│   ├── layout/             # Sidebar + floating nav
+│   └── queue/              # Queue management
+├── lib/                    # Shared utilities (auth, db, rbac)
+├── api/                    # Express AI proxy (separate container)
+│   ├── server.js           # AI proxy with 9-layer sanitization
+│   ├── audit.js            # Cryptographic audit chain
+│   ├── db.js               # Proxy database access
+│   └── queue.js            # Queue utilities
+├── db/                     # Database schema + migrations
+│   ├── schema.sql          # Full schema definition
+│   ├── init.sql            # Docker entrypoint initializer
+│   ├── migration_*.sql     # Incremental migrations
+│   └── seed_cases_300.sql  # 300 sample cases across 8 categories
+├── docs/                   # Governance + compliance documentation
+│   ├── AI_GOVERNANCE_POLICY.md
+│   ├── AI_SYSTEM_INVENTORY.md
+│   ├── DATA_BREACH_RESPONSE_PLAN.md
+│   └── GE2025_CONSTITUENCY_DATA.md
+├── docker-compose.yml      # Full stack orchestration
+├── HANDOFF.md              # Session resume guide
+├── ROADMAP.md              # Development roadmap
+└── PORTS.md                # Port allocation ledger
+```
 
 ---
 
 ## Security
 
-This platform is built to OWASP LLM Top 10 compliance standards. The authoritative requirements document is [`SECURITY_FRAMEWORK.md`](./SECURITY_FRAMEWORK.md). This section captures the full audit posture for this platform specifically.
+This platform is built to OWASP LLM Top 10 compliance standards.
 
 ### OWASP LLM Top 10 — Compliance Status
 
@@ -64,13 +186,11 @@ This platform is built to OWASP LLM Top 10 compliance standards. The authoritati
 | LLM09 | Overreliance | ✅ Mitigated | Mandatory AI disclosure in chat UI; consent gate; human review before action |
 | LLM10 | Model Theft | ✅ Mitigated | System prompt isolated in proxy container; never sent to browser |
 
----
-
 ### Prompt Injection Defence (LLM01)
 
 All AI calls route through `mps-ai-proxy` — a dedicated server-side Express container. The browser calls `/api/ai/chat` and `/api/ai/categorize` only. The system prompt, canary tokens, and PII masking logic live exclusively in `api/server.js` and are invisible to browser DevTools.
 
-**7-layer sanitization applied to every user message before it reaches Ollama:**
+**9-layer sanitization applied to every user message before it reaches Ollama:**
 
 | ID | Pattern blocked |
 |----|----------------|
@@ -82,26 +202,9 @@ All AI calls route through `mps-ai-proxy` — a dedicated server-side Express co
 | PI-06 | History poisoning — max 20 turns; all turns individually sanitized |
 | PI-07 | `||URGENT_BOOKING||` stripped from all user input before inference |
 | PI-08 | Encoded payload detection — morse code (5+ tokens), base64 (6+ groups), hex (8+ byte pairs) rejected at proxy before inference |
-| PI-09 | Scope-restricted identity — model defined as single-purpose constituency assistant; explicit authorised/unauthorised task list; out-of-scope requests refused regardless of encoding or framing (RLHF helpfulness override mitigation) |
+| PI-09 | Scope-restricted identity — model defined as single-purpose constituency assistant; explicit authorised/unauthorised task list; out-of-scope requests refused regardless of encoding or framing |
 
 **Canary token detection:** A per-request UUID is embedded in the system prompt. If the model echoes the canary in its response (extraction attempt), the proxy redacts it and emits `SECURITY_CANARY_TRIGGERED` in the audit log.
-
----
-
-### Output Handling (LLM02)
-
-`sanitizeOutput()` runs on every AI response before it reaches the browser:
-
-- All `<script>` tags stripped
-- All HTML tags stripped
-- `javascript:` → `javascript-blocked:`
-- `vbscript:` → `vbscript-blocked:`
-
-**Output anomaly check on `/api/ai/chat`:** After sanitization, chat responses are scanned for structural anomalies (SQL patterns, code blocks, jailbreak phrases). Any match returns HTTP 422 and logs `OUTPUT_ANOMALY_CHAT` — the response is never returned to the browser.
-
-**Categorization schema enforcement:** AI-structured responses (category, urgency) are rebuilt from validated fields only. Unknown fields are discarded. Enum values are checked against hardcoded allowlists. Free-text fields are length-capped.
-
----
 
 ### PII Masking (LLM06)
 
@@ -116,53 +219,6 @@ Applied in `maskPII()` before every Ollama call. The model never sees raw reside
 | SG postal code | `[POSTAL REDACTED]` |
 | Street address (number + street type) | `[ADDRESS REDACTED]` |
 
-Nginx telemetry omits client IP (PDPA compliance). AI audit logs record character lengths, not message content.
-
----
-
-### Human-in-the-Loop Gate (LLM08)
-
-The urgent booking flow previously relied on client-side text scanning for `||URGENT_BOOKING||` — injectable via crafted user messages. This has been closed:
-
-- `||URGENT_BOOKING||` is stripped from all user input in `sanitize()` — it cannot reach Ollama
-- The proxy detects the tag in AI output server-side and strips it from visible response text
-- A boolean `isUrgent: true` is returned in the JSON response
-- `ResidentView.tsx` checks `data.isUrgent` — not any text pattern — before showing the booking modal
-- The booking modal requires explicit human confirmation before any action is taken
-
----
-
-### Overreliance Mitigation (LLM09)
-
-- Opening chat message states explicitly: AI assistant, not a human staff member
-- AI badge visible in the chat header at all times
-- Consent gate: residents must confirm AI use, data handling, and demo acknowledgement before any AI interaction — hard block, not a notice
-- All case outputs require staff review before action
-
----
-
-### Model DoS Protection (LLM04)
-
-**Layer 1 — nginx:**
-
-- AI endpoints: 20 req/min per IP, burst 5
-- HTTP 429 returned immediately for excess requests
-
-**Layer 2 — proxy:**
-
-- `/api/ai/chat`: 30 req/min
-- `/api/ai/categorize`: 10 req/min
-- Input length cap applied before reaching Ollama
-- `AbortSignal.timeout(30_000)` on every inference call
-
----
-
-### Authentication
-
-Staff dashboard access is gated by `VITE_STAFF_ACCESS_CODE` (environment variable). Keep this strong in any deployment handling real resident data. Server-side auth is the right long-term fix — tracked as a deferred item.
-
----
-
 ### Container Security
 
 | Standard | Implementation |
@@ -170,109 +226,47 @@ Staff dashboard access is gated by `VITE_STAFF_ACCESS_CODE` (environment variabl
 | No privilege escalation | `security_opt: - no-new-privileges:true` on all containers |
 | Non-root user | `aiproxy` user in `mps-ai-proxy` container |
 | Resource limits | Memory and CPU caps on all services |
-| Network isolation | Proxy reachable only from nginx on `ai-bridge` — not from browser or host |
-
----
-
-### HTTP Security Headers
-
-Enforced on every nginx response:
-
-| Header | Value |
-|--------|-------|
-| `Content-Security-Policy` | `default-src 'self'` |
-| `X-Frame-Options` | `SAMEORIGIN` |
-| `X-Content-Type-Options` | `nosniff` |
-| `X-XSS-Protection` | `1; mode=block` |
-| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` |
-| `Referrer-Policy` | `strict-origin-when-cross-origin` |
-| `Permissions-Policy` | camera, geolocation, payment, USB denied |
-| `server_tokens` | `off` — nginx version suppressed |
-
----
+| Network isolation | Proxy reachable only on `ai-bridge` — not from browser or host |
 
 ### Supply Chain (LLM05)
 
 `.github/workflows/security-audit.yml` runs on every push, pull request, and weekly (Sunday 02:00 SGT). Audits both frontend (`package.json`) and AI proxy (`api/package.json`). Pipeline fails on any high or critical CVE.
 
----
-
 ### Privacy
 
-- All inference runs locally via Ollama on the local network — no resident data transmitted externally
+- All inference runs locally via Ollama — no resident data transmitted externally
 - No external API keys
-- Nginx logs omit client IP
-- Session-scoped only — no persistent server-side storage of resident conversations
+- PDPA-compliant consent gate — hard block before any AI interaction
+- PII masking before all inference calls
+- Session-scoped conversations
 
 ---
 
-### AI Audit Log
+## Governance
 
-Every inference call emits a structured JSON log:
+MPS-Connect is built in compliance with:
 
-```json
-{
-  "ts": "2026-05-09T01:23:00.000Z",
-  "type": "CHAT | CATEGORIZE | SECURITY_CANARY_TRIGGERED | ERROR_CHAT | ERROR_CATEGORIZE",
-  "inputLen": 42,
-  "outputLen": 387,
-  "isUrgent": false,
-  "canaryDetected": false
-}
-```
+- **Singapore PDPA** (§13, §20, §25, §26D) — consent collection, purpose limitation, breach notification
+- **IMDA Agentic AI Framework** (2nd Ed, 2026) — kill switch, accountability tracking, human oversight
+- **OWASP LLM Top 10** — full compliance matrix above
 
-```bash
-docker logs mps-ai-proxy | grep '"type"'      # all AI calls
-docker logs mps-ai-proxy | grep CANARY        # extraction attempts only
-```
+Governance documentation lives in `docs/`:
+
+| Document | Purpose |
+|----------|---------|
+| [AI_GOVERNANCE_POLICY.md](./docs/AI_GOVERNANCE_POLICY.md) | AI governance policy and principles |
+| [AI_SYSTEM_INVENTORY.md](./docs/AI_SYSTEM_INVENTORY.md) | AI system registry with risk classification |
+| [DATA_BREACH_RESPONSE_PLAN.md](./docs/DATA_BREACH_RESPONSE_PLAN.md) | Incident response playbook (PDPA §26D) |
 
 ---
 
-### Development Checklist
-
-Items marked `[BLOCK]` are merge blockers.
-
-#### AI and LLM
-
-- [ ] `[BLOCK]` All AI calls route through `mps-ai-proxy` — no direct browser-to-Ollama calls
-- [ ] `[BLOCK]` System prompt defined only in `api/server.js`
-- [ ] `[BLOCK]` All user input passes through `sanitize()` before Ollama
-- [ ] `[BLOCK]` PII masking (`maskPII()`) applied to all user-supplied text
-- [ ] `[BLOCK]` AI output passes through `sanitizeOutput()` before returning to client
-- [ ] `[BLOCK]` Structured output validated against hardcoded schema
-- [ ] `[BLOCK]` Canary detection present in every endpoint returning AI text
-- [ ] `[BLOCK]` `auditLog()` called on success and error paths
-- [ ] Rate limit defined for the new endpoint
-- [ ] `AbortSignal.timeout` defined on every inference call
-
-#### Human-in-the-loop
-
-- [ ] `[BLOCK]` Any high-agency action gated on server-side boolean, not AI text
-- [ ] Human confirmation modal present for real-world consequences
-
-#### Containers
-
-- [ ] `no-new-privileges: true`
-- [ ] Non-root user defined
-- [ ] Memory and CPU limits defined
-- [ ] Port exposure is minimum required
-
-#### HTTP
-
-- [ ] Full security header block in nginx config
-- [ ] `server_tokens off` present
-- [ ] CSP does not include `unsafe-inline` or `unsafe-eval`
-
-#### CI/CD
-
-- [ ] `[BLOCK]` `npm audit --audit-level=high` passes cleanly for frontend and proxy
-
----
-
-## Engineering notes
+## Engineering Notes
 
 **Why a server-side AI proxy?**
 The original architecture had the browser calling Ollama directly through an nginx proxy. That meant the system prompt was visible in DevTools network tabs and could be targeted for extraction or override. The proxy moves all security logic — system prompt, PII masking, canary tokens, injection sanitization, output validation — into a server container that the browser never contacts directly.
+
+**Why Next.js 15?**
+The project migrated from Vite SPA to Next.js 15 (App Router) to consolidate server actions, API routes, and SSR into a single framework. Server actions enabled the causality engine and document management to run server-side without a separate BFF layer, reducing container count and eliminating CORS complexity.
 
 **Why local inference?**
 Resident data is sensitive by nature. Running inference locally via Ollama means no case content ever leaves the network — no cloud API, no usage logs on a third-party server. It also eliminates per-session API costs at scale.
@@ -283,79 +277,34 @@ Tested against several models for this specific workload. It handles the colloqu
 **Why the consent gate?**
 Privacy by design. Before any resident data is processed by the AI, explicit consent is collected for three things: AI use, data handling, and demo acknowledgement. This is a gate, not a notice — nothing proceeds without all three checked.
 
-**Why replace `alert()` with a persistent screen?**
-A browser alert is dismissed and the reference number is gone. A resident asking "what was my number?" has no recourse. The CaseSubmitted screen holds the reference until the resident actively leaves — a small change with a meaningful UX impact.
-
 ---
 
-## Architecture for scale
+## Architecture for Scale
 
-MPS-Connect is scoped for single-branch to small-cluster deployment. A single constituency holds roughly 60,000 residents. Physical MPS sessions see 50–100 cases per week — even at 10× digital adoption that is ~1,000 submissions per week, or 6–8 concurrent users at any peak moment. Scaled to all 97 branches nationally, absolute peak is ~2,000–3,000 concurrent users system-wide. The current architecture handles this load correctly. Adding distributed systems complexity before the load requires it is engineering theatre that would have prevented this project from being built at all.
-
-The stateless Express proxy scales horizontally trivially — add instances behind an nginx upstream block, no stateful changes needed. The causality engine is the only non-trivial bottleneck.
+MPS-Connect is scoped for single-branch to small-cluster deployment. A single constituency holds roughly 60,000 residents. Physical MPS sessions see 50–100 cases per week — even at 10× digital adoption that is ~1,000 submissions per week, or 6–8 concurrent users at any peak moment. Scaled to all 97 branches nationally, absolute peak is ~2,000–3,000 concurrent users system-wide. The current architecture handles this load correctly.
 
 | Trigger | Architectural change |
 |---|---|
-| >3 branches on one deployment | SQLite → PostgreSQL with PgBouncer; row-level security by branch ID; read replica for analytics |
-| >10 concurrent causality analyses | Sync HTTP → async job queue (BullMQ + Redis); resident submits, receives job ID, polls `/api/ai/causality/:jobId` |
-| National deployment (97 branches) | Ollama inference cluster or inference queue behind BullMQ; multi-tenant branch isolation; k3s or managed Kubernetes |
-| High-availability requirement | Multiple stateless proxy instances behind nginx upstream; already stateless, horizontally trivial |
+| >3 branches on one deployment | PgBouncer connection pooling; row-level security by branch ID; read replica for analytics |
+| >10 concurrent causality analyses | Sync HTTP → async job queue (BullMQ + Redis); resident submits, receives job ID, polls status |
+| National deployment (97 branches) | Ollama inference cluster or inference queue behind BullMQ; multi-tenant branch isolation |
+| High-availability requirement | Multiple stateless proxy instances behind nginx upstream; horizontally trivial |
 | Cross-branch SLA analytics | Read replica + materialized views; no schema change to the append-only audit tables |
 
-The causality engine is a 3-stage sequential LLM pipeline taking up to 120 seconds synchronously. At load it converts to an async job — the client posts a job, receives a job ID, and polls. That is the single architectural change that unlocks national-scale deployment. Everything else is standard horizontal replication. The full scale-out path is in [`ROADMAP.md`](./ROADMAP.md).
+The full scale-out path is in [`ROADMAP.md`](./ROADMAP.md).
 
 ---
 
-## Setup
-
-### Prerequisites
-
-- Docker and Docker Compose
-- Ollama running with `gemma4:e2b` pulled (or any OpenAI-compatible endpoint)
-- `ai-bridge` Docker network created by `infrastructure/docker-compose.ai.yml`
-
-### Environment
-
-Copy `.env.example` to `.env` and set:
-
-```env
-VITE_STAFF_ACCESS_CODE=your-chosen-code
-OLLAMA_ENDPOINT=http://<ollama-host>:11434/api/chat
-AI_MODEL=gemma4:e2b
-```
-
-### Run
-
-```bash
-docker compose up -d
-```
-
-App available at `http://localhost:3080`. The `mps-ai-proxy` container starts first (healthcheck dependency).
-
----
-
-## Configuration
-
-| Variable | Purpose |
-| --- | --- |
-| `VITE_STAFF_ACCESS_CODE` | Passcode required to access the staff portal |
-| `OLLAMA_ENDPOINT` | Ollama chat API URL (server-side proxy only) |
-| `AI_MODEL` | Model name (default: `gemma4:e2b`) |
-
-Note: `VITE_OLLAMA_HOST` and `VITE_OLLAMA_MODEL` are no longer used — AI is fully server-side.
-
----
-
-## Important notes
+## Important Notes
 
 This is a **research and demonstration tool**. It is not an official government service, not affiliated with any government agency, and must not be presented as one. The consent gate displayed to residents makes this explicit.
-
-Staff access is gated by an environment-variable access code. Do not use a weak code in any environment with real resident data.
 
 ---
 
 ## Roadmap
 
-Planned development is documented in [`ROADMAP.md`](./ROADMAP.md). **Phase 1 is implemented** — causality engine, Case Writer Intelligence panel, multi-agency letter generation, Copy to Gather, and HITL governance infrastructure are all live. Phase 2 targets demand-driven document collection: the causality engine output drives a per-case document requirement checklist, replacing static upload forms. Phase 3 introduces G2G document requests to public institutions (SingHealth / NHG hospitals and polyclinics) on behalf of residents, and SingPass OIDC for high-assurance cases. Phase 4 covers continuous learning via HITL-RAG and confidence-based batch case approval. Estimated remaining build: 12–16 weeks.
+Planned development is documented in [`ROADMAP.md`](./ROADMAP.md). **Phase 1 is implemented** — causality engine, Case Writer Intelligence panel, multi-agency letter generation, Copy to Gather, and HITL governance infrastructure are all live. Phase 2 targets demand-driven document collection. Phase 3 introduces G2G document requests to public institutions. Phase 4 covers continuous learning via HITL-RAG and confidence-based batch case approval.
+
+---
 
 Built by [@thegeekybeng](https://github.com/thegeekybeng)

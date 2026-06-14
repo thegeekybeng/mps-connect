@@ -7,10 +7,17 @@ node_modules/
 dist/
 dist-ssr/
 
+# Next.js build output
+.next/
+out/
+
 # Environment secrets — NEVER commit
 .env
 .env.*
 !.env.example
+
+# Build cache
+tsconfig.tsbuildinfo
 
 # Logs
 *.log
@@ -20,11 +27,27 @@ npm-debug.log*
 .DS_Store
 Thumbs.db
 
-# Backups
-*.bak-*
+# Archive / backup directories — internal working copies
+.archive-*/
 .backup-*/
+
+# AI agent working notes — internal scratch files
+.codebase-viz/
 
 # Editor
 .vscode/*
 !.vscode/extensions.json
 .idea
+
+# AI Architecture Context — internal effort estimates, decision rationale,
+# and AI assistance maps. Not for public repos.
+# See .ai-arch/README.md for the standard.
+.ai-arch/
+
+# Conversation transcripts and session history — contain credentials,
+# local infrastructure IPs, and internal audit findings. Never push.
+docs/conversation-transcripts/
+docs/session-history/
+
+# Antigravity / Gemini working directories
+.antigravityignore

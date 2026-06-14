@@ -1,0 +1,253 @@
+@import "tailwindcss";
+
+/* ══════════════════════════════════════════════════════════════
+   MPS Connect — Government Design System Tokens
+   Palette: Singapore civic (navy primary + SG Flag red accent)
+   ══════════════════════════════════════════════════════════════ */
+
+:root {
+  --font-inter: 'Inter', sans-serif;
+
+  /* ── Primary — Deep Navy ──────────────────────────────── */
+  --gov-primary:       #1C3D5A;
+  --gov-primary-hover: #163250;
+  --gov-primary-light: #2E5D8C;
+  --gov-primary-50:    #EBF0F5;
+  --gov-primary-100:   #D0DCEA;
+
+  /* ── Accent — Singapore Flag Red (strategic, not dominant) */
+  --gov-accent:        #EE2536;
+  --gov-accent-hover:  #D41E2E;
+  --gov-accent-50:     #FEF0F1;
+  --gov-accent-100:    #FDDADD;
+
+  /* ── Surfaces ─────────────────────────────────────────── */
+  --gov-surface:       #FFFFFF;
+  --gov-surface-alt:   #F7F8FA;
+  --gov-surface-inset: #F1F3F6;
+
+  /* ── Borders ──────────────────────────────────────────── */
+  --gov-border:        #E2E8F0;
+  --gov-border-strong: #CBD5E1;
+  --gov-border-focus:  #2E5D8C;
+
+  /* ── Text ─────────────────────────────────────────────── */
+  --gov-text:          #1E293B;
+  --gov-text-secondary:#64748B;
+  --gov-text-muted:    #94A3B8;
+  --gov-text-inverse:  #FFFFFF;
+
+  /* ── Urgency colours — unchanged (functional, universal) */
+  --urgency-critical: #ef4444;
+  --urgency-high:     #f97316;
+  --urgency-medium:   #eab308;
+  --urgency-low:      #22c55e;
+
+  /* ── Status colours ───────────────────────────────────── */
+  --status-new:               #3b82f6;
+  --status-triaged:           #8b5cf6;
+  --status-drafting:          #6366f1;
+  --status-pending-approval:  #f59e0b;
+  --status-approved:          #10b981;
+  --status-sent:              #059669;
+  --status-closed:            #6b7280;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: var(--font-inter);
+  background: var(--gov-surface-alt);
+  color: var(--gov-text);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   Urgency badge utilities
+   ══════════════════════════════════════════════════════════════ */
+.urgency-critical { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+.urgency-high     { background: #fff7ed; color: #9a3412; border: 1px solid #fed7aa; }
+.urgency-medium   { background: #fefce8; color: #854d0e; border: 1px solid #fef08a; }
+.urgency-low      { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
+
+/* ══════════════════════════════════════════════════════════════
+   Status badge utilities
+   ══════════════════════════════════════════════════════════════ */
+.status-new              { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+.status-triaged          { background: #f5f3ff; color: #6d28d9; border: 1px solid #ddd6fe; }
+.status-drafting         { background: #eef2ff; color: #4338ca; border: 1px solid #c7d2fe; }
+.status-pending-approval { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
+.status-approved         { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+.status-sent             { background: #ecfdf5; color: #047857; border: 1px solid #6ee7b7; }
+.status-closed           { background: #f9fafb; color: #374151; border: 1px solid #e5e7eb; }
+
+/* ══════════════════════════════════════════════════════════════
+   Government Card — clean bordered panel
+   ══════════════════════════════════════════════════════════════ */
+.gov-card {
+  background: var(--gov-surface);
+  border: 1px solid var(--gov-border);
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+.gov-card:hover {
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   Government Buttons
+   ══════════════════════════════════════════════════════════════ */
+.gov-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: var(--gov-primary);
+  color: var(--gov-text-inverse);
+  font-weight: 600;
+  font-size: 0.875rem;
+  border-radius: 8px;
+  border: 1px solid var(--gov-primary);
+  transition: background 200ms ease, box-shadow 200ms ease;
+  cursor: pointer;
+}
+.gov-btn-primary:hover {
+  background: var(--gov-primary-hover);
+}
+.gov-btn-primary:focus-visible {
+  outline: 2px solid var(--gov-border-focus);
+  outline-offset: 2px;
+}
+
+.gov-btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: var(--gov-surface);
+  color: var(--gov-text);
+  font-weight: 600;
+  font-size: 0.875rem;
+  border-radius: 8px;
+  border: 1px solid var(--gov-border-strong);
+  transition: background 200ms ease, border-color 200ms ease;
+  cursor: pointer;
+}
+.gov-btn-secondary:hover {
+  background: var(--gov-surface-alt);
+  border-color: var(--gov-primary-light);
+}
+.gov-btn-secondary:focus-visible {
+  outline: 2px solid var(--gov-border-focus);
+  outline-offset: 2px;
+}
+
+.gov-btn-danger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: var(--gov-accent);
+  color: var(--gov-text-inverse);
+  font-weight: 600;
+  font-size: 0.875rem;
+  border-radius: 8px;
+  border: 1px solid var(--gov-accent);
+  transition: background 200ms ease;
+  cursor: pointer;
+}
+.gov-btn-danger:hover {
+  background: var(--gov-accent-hover);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   Government Badge
+   ══════════════════════════════════════════════════════════════ */
+.gov-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.625rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 6px;
+  border: 1px solid var(--gov-border);
+  background: var(--gov-surface-alt);
+  color: var(--gov-text-secondary);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   Government Stat Card
+   ══════════════════════════════════════════════════════════════ */
+.gov-stat {
+  background: var(--gov-surface);
+  border: 1px solid var(--gov-border);
+  border-radius: 12px;
+  padding: 1.25rem 1.5rem;
+  border-left: 4px solid var(--gov-primary);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   Smooth page transitions
+   ══════════════════════════════════════════════════════════════ */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-page { animation: fadeIn 0.2s ease-out; }
+
+/* Chat bubble entrance */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in { animation: fadeInUp 0.25s ease-out; }
+
+/* ══════════════════════════════════════════════════════════════
+   Voice Recording Animations
+   ══════════════════════════════════════════════════════════════ */
+
+/* Recording pulse — red glow on the stop button */
+@keyframes recordPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(220, 38, 38, 0); }
+}
+.recording-pulse { animation: recordPulse 1.5s ease-in-out infinite; }
+
+/* Waveform bars — staggered height animation */
+.voice-wave-bar {
+  display: inline-block;
+  width: 3px;
+  height: 12px;
+  border-radius: 2px;
+  background: #dc2626;
+  animation: waveBar 0.8s ease-in-out infinite;
+}
+@keyframes waveBar {
+  0%, 100% { height: 6px; opacity: 0.5; }
+  50% { height: 16px; opacity: 1; }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   Language badge colours
+   ══════════════════════════════════════════════════════════════ */
+.lang-badge-en { background: #dbeafe; color: #1d4ed8; border: 1px solid #bfdbfe; }
+.lang-badge-zh { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+.lang-badge-ms { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+.lang-badge-ta { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+.lang-badge-singlish { background: #e0e7ff; color: #3730a3; border: 1px solid #c7d2fe; }
+
+/* ══════════════════════════════════════════════════════════════
+   Focus ring global — accessibility
+   ══════════════════════════════════════════════════════════════ */
+:focus-visible {
+  outline: 2px solid var(--gov-border-focus);
+  outline-offset: 2px;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   Bottom tab bar (mobile) safe area
+   ══════════════════════════════════════════════════════════════ */
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}

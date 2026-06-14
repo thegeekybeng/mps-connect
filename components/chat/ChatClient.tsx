@@ -1,0 +1,493 @@
+'use client';
+
+import { useState, useRef, useEffect, useTransition, useCallback, useMemo } from 'react';
+import { sendMessage, submitCase } from '@/app/actions/chat';
+import { Send, Bot, User, AlertTriangle, Loader2, CheckCircle2, ArrowLeft, ShieldCheck } from 'lucide-react';
+import VoiceRecorder from '@/components/chat/VoiceRecorder';
+import AudioPlayback from '@/components/chat/AudioPlayback';
+import ChatMarkdown from '@/components/chat/ChatMarkdown';
+
+const LANG_LABELS: Record<string, { flag: string; name: string }> = {
+  en: { flag: '🇬🇧', name: 'English' },
+  zh: { flag: '🇨🇳', name: 'Chinese' },
+  ms: { flag: '🇲🇾', name: 'Malay' },
+  ta: { flag: '🇮🇳', name: 'Tamil' },
+  singlish: { flag: '🇸🇬', name: 'Singlish' },
+};
+
+interface Message {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  isUrgent?: boolean;
+  timestamp: Date;
+  inputMethod?: 'text' | 'voice';
+  detectedLang?: string;
+}
+
+interface Props {
+  mpName: string;
+  constituency: string;
+  division?: string;
+  constituencyId: number;
+}
+
+export default function ChatClient({ mpName, constituency, division, constituencyId }: Props) {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState('');
+  const [isPending, startTransition] = useTransition();
+  const [isTyping, setIsTyping] = useState(false);
+  const [urgentDetected, setUrgentDetected] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Session ID for audit trail — stable across the conversation
+  const sessionId = useMemo(() => crypto.randomUUID(), []);
+
+  // Case submission
+  const [showSubmit, setShowSubmit] = useState(false);
+  const [submitName, setSubmitName] = useState('');
+  const [submitPhone, setSubmitPhone] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState<{ caseNumber: string; message: string } | null>(null);
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-scroll to bottom on new messages
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages, isTyping]);
+
+  // Show submit CTA after 3+ user messages
+  useEffect(() => {
+    const userMsgCount = messages.filter(m => m.role === 'user').length;
+    if (userMsgCount >= 3 && !submitted) {
+      setShowSubmit(true);
+    }
+  }, [messages, submitted]);
+
+  const handleSend = useCallback(() => {
+    const trimmed = input.trim();
+    if (!trimmed || isPending) return;
+
+    const userMsg: Message = {
+      id: crypto.randomUUID(),
+      role: 'user',
+      content: trimmed,
+      timestamp: new Date(),
+      inputMethod: 'text',
+    };
+
+    setMessages(prev => [...prev, userMsg]);
+    setInput('');
+    setError(null);
+    setIsTyping(true);
+
+    startTransition(async () => {
+      const history = [...messages, userMsg].map(m => ({
+        role: m.role,
+        content: m.content,
+      }));
+
+      const result = await sendMessage({
+        message: trimmed,
+        history,
+        mpName,
+        constituency,
+        division,
+      });
+
+      setIsTyping(false);
+
+      if (result.error) {
+        setError(result.error);
+        return;
+      }
+
+      if (result.isUrgent) {
+        setUrgentDetected(true);
+      }
+
+      const aiMsg: Message = {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: result.response,
+        isUrgent: result.isUrgent,
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, aiMsg]);
+    });
+  }, [input, isPending, messages, mpName, constituency, division, startTransition]);
+
+  // Handle voice transcription — auto-send the transcribed text
+  const handleVoiceTranscription = useCallback((result: { text: string; language: string }) => {
+    const voiceMsg: Message = {
+      id: crypto.randomUUID(),
+      role: 'user',
+      content: result.text,
+      timestamp: new Date(),
+      inputMethod: 'voice',
+      detectedLang: result.language,
+    };
+
+    setMessages(prev => [...prev, voiceMsg]);
+    setError(null);
+    setIsTyping(true);
+
+    startTransition(async () => {
+      const history = [...messages, voiceMsg].map(m => ({
+        role: m.role,
+        content: m.content,
+      }));
+
+      const aiResult = await sendMessage({
+        message: result.text,
+        history,
+        mpName,
+        constituency,
+        division,
+      });
+
+      setIsTyping(false);
+
+      if (aiResult.error) {
+        setError(aiResult.error);
+        return;
+      }
+
+      if (aiResult.isUrgent) {
+        setUrgentDetected(true);
+      }
+
+      const aiMsg: Message = {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: aiResult.response,
+        isUrgent: aiResult.isUrgent,
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, aiMsg]);
+    });
+  }, [messages, mpName, constituency, division, startTransition]);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
+  const handleSubmitCase = async () => {
+    if (!submitName.trim()) return;
+    setSubmitting(true);
+
+    const conversation = messages.map(m => ({
+      role: m.role,
+      content: m.content,
+    }));
+
+    const result = await submitCase({
+      conversation,
+      residentName: submitName.trim(),
+      phone: submitPhone.trim() || undefined,
+      constituencyId,
+    });
+
+    setSubmitting(false);
+
+    if (result.success) {
+      setSubmitted({ caseNumber: result.caseNumber || '', message: result.message });
+      setShowSubmit(false);
+    } else {
+      setError(result.message);
+    }
+  };
+
+  const [aiDisclosureDismissed, setAiDisclosureDismissed] = useState(false);
+
+  return (
+    <div className="flex flex-col h-full max-h-[100dvh]">
+      {/* ── Header ─────────────────────────────────────────── */}
+      <header className="shrink-0 px-4 py-3 sm:px-6" style={{ background: 'var(--gov-surface)', borderBottom: '1px solid var(--gov-border)' }}>
+        <div className="max-w-2xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <a href="/" className="w-9 h-9 rounded-lg flex items-center justify-center transition-colors hover:bg-slate-100" style={{ border: '1px solid var(--gov-border)' }} aria-label="Back to home">
+              <ArrowLeft size={16} style={{ color: 'var(--gov-text-muted)' }} />
+            </a>
+            <div>
+              <h1 className="text-sm font-bold leading-tight" style={{ color: 'var(--gov-text)' }}>Chat with {mpName}&apos;s Office</h1>
+              <p className="text-xs" style={{ color: 'var(--gov-text-muted)' }}>{constituency}{division ? ` · ${division}` : ''}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 text-xs text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            Online
+          </div>
+        </div>
+      </header>
+
+      {/* ── AI Disclosure Banner (IMDA AIGF §4 / GOV-TD-002) ─── */}
+      {!aiDisclosureDismissed && (
+        <div
+          className="shrink-0 px-4 py-2.5 sm:px-6"
+          style={{ background: '#EFF6FF', borderBottom: '1px solid #BFDBFE' }}
+          role="status"
+          aria-label="AI disclosure notice"
+          id="ai-disclosure-banner"
+        >
+          <div className="max-w-2xl mx-auto flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-xs" style={{ color: '#1E40AF' }}>
+              <Bot size={14} className="shrink-0" />
+              <span>
+                <strong>AI-Assisted</strong> — Responses are generated by AI. All decisions are reviewed by a human officer.
+              </span>
+            </div>
+            <button
+              onClick={() => setAiDisclosureDismissed(true)}
+              className="text-xs font-medium shrink-0 px-2 py-1 rounded hover:bg-blue-100 transition-colors"
+              style={{ color: '#2563EB' }}
+              aria-label="Dismiss AI disclosure"
+              id="dismiss-ai-disclosure"
+            >
+              Got it
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Urgent banner ──────────────────────────────────── */}
+      {urgentDetected && (
+        <div className="shrink-0 bg-amber-50 border-b border-amber-200 px-4 py-2.5 sm:px-6">
+          <div className="max-w-2xl mx-auto flex items-center gap-2 text-xs text-amber-800">
+            <AlertTriangle size={14} className="text-amber-600 shrink-0" />
+            <p className="font-semibold">
+              Your case has been flagged as urgent. The MP&apos;s office will prioritise this.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Case submitted banner ──────────────────────────── */}
+      {submitted && (
+        <div className="shrink-0 bg-emerald-50 border-b border-emerald-200 px-4 py-3 sm:px-6">
+          <div className="max-w-2xl mx-auto flex items-center gap-2.5">
+            <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+            <div>
+              <p className="text-sm font-semibold text-emerald-800">Case {submitted.caseNumber} submitted</p>
+              <p className="text-xs text-emerald-600">{submitted.message}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Messages area ──────────────────────────────────── */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-6 sm:px-6 space-y-1">
+        <div className="max-w-2xl mx-auto space-y-1">
+
+          {/* Welcome message */}
+          {messages.length === 0 && (
+            <div className="flex flex-col items-center text-center py-12 space-y-4">
+              <div className="w-16 h-16 rounded-xl flex items-center justify-center" style={{ background: 'var(--gov-primary)' }}>
+                <Bot size={28} className="text-white" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold" style={{ color: 'var(--gov-text)' }}>How can we help you today?</h2>
+                <p className="text-sm mt-1 max-w-md" style={{ color: 'var(--gov-text-secondary)' }}>
+                  Tell us about your issue in any language — English, Singlish, 中文, Melayu, or தமிழ்.
+                  We&apos;ll make sure it reaches the right agency.
+                </p>
+              </div>
+              <div className="flex flex-wrap justify-center gap-2 mt-2">
+                {[
+                  'I need help with my HDB flat',
+                  'Saya perlukan bantuan kewangan',
+                  '我需要帮助申请补贴',
+                  'My neighbour very noisy lah',
+                ].map(suggestion => (
+                  <button
+                    key={suggestion}
+                    type="button"
+                    onClick={() => { setInput(suggestion); inputRef.current?.focus(); }}
+                    className="text-xs px-3 py-2 rounded-lg transition-all"
+                    style={{ background: 'var(--gov-surface)', border: '1px solid var(--gov-border)', color: 'var(--gov-text-secondary)' }}
+                  >
+                    {suggestion}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Chat messages */}
+          {messages.map(msg => (
+            <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in`}>
+              <div className={`flex items-end gap-2 max-w-[85%] sm:max-w-[75%] ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
+                {/* Avatar */}
+                <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
+                  style={msg.role === 'user'
+                    ? { background: 'var(--gov-primary-50)', color: 'var(--gov-primary)' }
+                    : { background: 'var(--gov-surface-inset)', color: 'var(--gov-text-muted)' }
+                  }>
+                  {msg.role === 'user' ? <User size={14} /> : <Bot size={14} />}
+                </div>
+
+                {/* Bubble */}
+                <div className={`px-4 py-2.5 text-sm leading-relaxed ${
+                  msg.role === 'user'
+                    ? 'rounded-2xl rounded-br-md text-white'
+                    : 'rounded-2xl rounded-bl-md shadow-sm'
+                }`}
+                  style={msg.role === 'user'
+                    ? { background: 'var(--gov-primary)' }
+                    : { background: 'var(--gov-surface)', border: '1px solid var(--gov-border)', color: 'var(--gov-text)' }
+                  }>
+                  {/* Language badge for voice input */}
+                  {msg.inputMethod === 'voice' && msg.detectedLang && (
+                    <div className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-md mb-1 lang-badge-${msg.detectedLang}`}>
+                      {LANG_LABELS[msg.detectedLang]?.flag || '🌐'} {LANG_LABELS[msg.detectedLang]?.name || msg.detectedLang} · voice
+                    </div>
+                  )}
+
+                  {/* Render markdown — bold, italic, lists render properly */}
+                  <ChatMarkdown content={msg.content} />
+
+                  {msg.isUrgent && (
+                    <div className="mt-2 pt-2 border-t border-amber-200 flex items-center gap-1.5 text-xs text-amber-600 font-semibold">
+                      <AlertTriangle size={12} /> Urgent — prioritised for the MP
+                    </div>
+                  )}
+
+                  {/* TTS playback on assistant messages */}
+                  {msg.role === 'assistant' && (
+                    <AudioPlayback text={msg.content} sessionId={sessionId} messageId={msg.id} />
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+
+          {/* Typing indicator */}
+          {isTyping && (
+            <div className="flex justify-start animate-fade-in">
+              <div className="flex items-end gap-2">
+                <div className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center shrink-0">
+                  <Bot size={14} className="text-slate-500" />
+                </div>
+                <div className="bg-white border border-slate-100 rounded-2xl rounded-bl-md px-4 py-3 shadow-sm">
+                  <div className="flex gap-1">
+                    <span className="w-2 h-2 rounded-full bg-slate-300 animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <span className="w-2 h-2 rounded-full bg-slate-300 animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <span className="w-2 h-2 rounded-full bg-slate-300 animate-bounce" style={{ animationDelay: '300ms' }} />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Submit Case CTA ────────────────────────────────── */}
+      {showSubmit && !submitted && (
+        <div className="shrink-0 px-4 py-3 sm:px-6" style={{ borderTop: '1px solid var(--gov-border)', background: 'var(--gov-primary-50)' }}>
+          <div className="max-w-2xl mx-auto">
+            <div className="flex items-start gap-3">
+              <ShieldCheck size={18} className="shrink-0 mt-0.5" style={{ color: 'var(--gov-primary)' }} />
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-slate-800">Ready to submit your case?</p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Your conversation will be sent to the MP&apos;s office for follow-up.
+                </p>
+                <div className="flex flex-col sm:flex-row gap-2 mt-2.5">
+                  <input
+                    type="text"
+                    placeholder="Your name"
+                    value={submitName}
+                    onChange={e => setSubmitName(e.target.value)}
+                    maxLength={100}
+                    className="flex-1 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2"
+                    style={{ border: '1px solid var(--gov-border)', color: 'var(--gov-text)' }}
+                  />
+                  <input
+                    type="tel"
+                    placeholder="Phone (optional)"
+                    value={submitPhone}
+                    onChange={e => setSubmitPhone(e.target.value)}
+                    maxLength={20}
+                    className="sm:w-40 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2"
+                    style={{ border: '1px solid var(--gov-border)', color: 'var(--gov-text)' }}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSubmitCase}
+                    disabled={submitting || !submitName.trim()}
+                    className="px-4 py-2 disabled:opacity-50 text-white text-sm font-semibold rounded-lg transition-colors flex items-center gap-1.5"
+                    style={{ background: 'var(--gov-primary)' }}
+                  >
+                    {submitting ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                    {submitting ? 'Submitting…' : 'Submit Case'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Error display ──────────────────────────────────── */}
+      {error && (
+        <div className="shrink-0 bg-red-50 border-t border-red-200 px-4 py-2 sm:px-6">
+          <p className="max-w-2xl mx-auto text-xs text-red-700">{error}</p>
+        </div>
+      )}
+
+      {/* ── Input bar ──────────────────────────────────────── */}
+      <div className="shrink-0 px-4 py-3 sm:px-6 safe-bottom" style={{ borderTop: '1px solid var(--gov-border)', background: 'var(--gov-surface)' }}>
+        <div className="max-w-2xl mx-auto flex items-end gap-2">
+          <textarea
+            ref={inputRef}
+            id="chat-input"
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={submitted ? 'Case submitted — you can continue chatting' : 'Type or speak your message…'}
+            rows={1}
+            maxLength={2000}
+            className="flex-1 resize-none rounded-lg px-4 py-2.5 text-sm
+                       focus:outline-none focus:ring-2 max-h-32 overflow-y-auto"
+            style={{ minHeight: '44px', border: '1px solid var(--gov-border)', color: 'var(--gov-text)' }}
+          />
+
+          {/* Show mic when input is empty, send button when text is present */}
+          {input.trim() ? (
+            <button
+              type="button"
+              onClick={handleSend}
+              disabled={isPending}
+              className="w-11 h-11 rounded-lg disabled:opacity-50
+                         flex items-center justify-center transition-colors shrink-0"
+              style={{ background: 'var(--gov-primary)' }}
+              aria-label="Send message"
+            >
+              {isPending ? (
+                <Loader2 size={16} className="text-white animate-spin" />
+              ) : (
+                <Send size={16} className="text-white" />
+              )}
+            </button>
+          ) : (
+            <VoiceRecorder
+              sessionId={sessionId}
+              onTranscription={handleVoiceTranscription}
+              disabled={isPending || isTyping}
+            />
+          )}
+        </div>
+        <p className="max-w-2xl mx-auto text-[10px] text-slate-400 mt-1.5 text-center">
+          AI-assisted · Your conversation helps the MP&apos;s office understand your case
+        </p>
+      </div>
+    </div>
+  );
+}
