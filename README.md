@@ -53,7 +53,7 @@ Staff get a unified dashboard with all incoming cases. Pre-session triage is don
 ## Pages
 
 | Page | Route | Description |
-|------|-------|-------------|
+| ------ | ------- | ------------- |
 | Landing | `/` | Branch locator — postal code → constituency → MP |
 | Resident Chat | `/chat` | AI-assisted case intake (voice + text) |
 | Dashboard | `/dashboard` | KPI tiles, recent cases, queue summary |
@@ -127,7 +127,7 @@ docker exec -i mps-postgres psql -U mps -d mps_connect < ./db/seed_cases_300.sql
 
 ## Project Structure
 
-```
+```text
 mps-connect/
 ├── app/                    # Next.js App Router pages + server actions
 │   ├── actions/            # Server actions (agent, approvals, auth, cases, etc.)
@@ -174,7 +174,7 @@ This platform is built to OWASP LLM Top 10 compliance standards.
 ### OWASP LLM Top 10 — Compliance Status
 
 | # | Risk | Status | Control |
-|---|------|--------|---------|
+| --- | --- | --- | --- |
 | LLM01 | Prompt Injection | ✅ Mitigated | Server-side proxy, 9-layer input sanitization (incl. encoded payload detection), scope-restricted single-purpose identity, canary tokens, output anomaly check |
 | LLM02 | Insecure Output Handling | ✅ Mitigated | HTML/script stripping, output schema enforcement, whitelist validation |
 | LLM03 | Training Data Poisoning | ⚪ N/A | Read-only inference; no fine-tuning pipeline |
@@ -193,14 +193,14 @@ All AI calls route through `mps-ai-proxy` — a dedicated server-side Express co
 **9-layer sanitization applied to every user message before it reaches Ollama:**
 
 | ID | Pattern blocked |
-|----|----------------|
+| --- | --- |
 | PI-01 | System prompt isolated — never transmitted to browser |
 | PI-02 | `ignore all previous instructions`, `disregard`, `override` |
 | PI-03 | `you are now`, `act as`, `forget you are`, persona hijacking |
 | PI-04 | `[INST]`, `[/INST]`, `<<SYS>>`, `<</SYS>>`, `<system>`, `</system>` |
 | PI-05 | Code delimiter spoofing — prompt boundary markers |
 | PI-06 | History poisoning — max 20 turns; all turns individually sanitized |
-| PI-07 | `||URGENT_BOOKING||` stripped from all user input before inference |
+| PI-07 | `\|\|URGENT_BOOKING\|\|` stripped from all user input before inference |
 | PI-08 | Encoded payload detection — morse code (5+ tokens), base64 (6+ groups), hex (8+ byte pairs) rejected at proxy before inference |
 | PI-09 | Scope-restricted identity — model defined as single-purpose constituency assistant; explicit authorised/unauthorised task list; out-of-scope requests refused regardless of encoding or framing |
 
@@ -211,7 +211,7 @@ All AI calls route through `mps-ai-proxy` — a dedicated server-side Express co
 Applied in `maskPII()` before every Ollama call. The model never sees raw resident PII.
 
 | Pattern | Replacement |
-|---------|-------------|
+| --- | --- |
 | Singapore NRIC/FIN (`[STFGM]\d{7}[A-Z]`) | `[NRIC REDACTED]` |
 | SG mobile — +65 format | `[PHONE REDACTED]` |
 | SG mobile — local 8/9 prefix | `[PHONE REDACTED]` |
@@ -222,7 +222,7 @@ Applied in `maskPII()` before every Ollama call. The model never sees raw reside
 ### Container Security
 
 | Standard | Implementation |
-|----------|---------------|
+| --- | --- |
 | No privilege escalation | `security_opt: - no-new-privileges:true` on all containers |
 | Non-root user | `aiproxy` user in `mps-ai-proxy` container |
 | Resource limits | Memory and CPU caps on all services |
@@ -253,7 +253,7 @@ MPS-Connect is built in compliance with:
 Governance documentation lives in `docs/`:
 
 | Document | Purpose |
-|----------|---------|
+| --- | --- |
 | [AI_GOVERNANCE_POLICY.md](./docs/AI_GOVERNANCE_POLICY.md) | AI governance policy and principles |
 | [AI_SYSTEM_INVENTORY.md](./docs/AI_SYSTEM_INVENTORY.md) | AI system registry with risk classification |
 | [DATA_BREACH_RESPONSE_PLAN.md](./docs/DATA_BREACH_RESPONSE_PLAN.md) | Incident response playbook (PDPA §26D) |
@@ -284,7 +284,7 @@ Privacy by design. Before any resident data is processed by the AI, explicit con
 MPS-Connect is scoped for single-branch to small-cluster deployment. A single constituency holds roughly 60,000 residents. Physical MPS sessions see 50–100 cases per week — even at 10× digital adoption that is ~1,000 submissions per week, or 6–8 concurrent users at any peak moment. Scaled to all 97 branches nationally, absolute peak is ~2,000–3,000 concurrent users system-wide. The current architecture handles this load correctly.
 
 | Trigger | Architectural change |
-|---|---|
+| --- | --- |
 | >3 branches on one deployment | PgBouncer connection pooling; row-level security by branch ID; read replica for analytics |
 | >10 concurrent causality analyses | Sync HTTP → async job queue (BullMQ + Redis); resident submits, receives job ID, polls status |
 | National deployment (97 branches) | Ollama inference cluster or inference queue behind BullMQ; multi-tenant branch isolation |
