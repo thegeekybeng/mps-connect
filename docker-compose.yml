@@ -79,7 +79,7 @@ services:
     container_name: mps-ai-proxy
     environment:
       - OLLAMA_ENDPOINT=${OLLAMA_ENDPOINT:-http://localhost:11434/api/chat}
-      - AI_MODEL=${AI_MODEL:-gemma4:e4b}
+      - AI_MODEL=${AI_MODEL:-gemma3n:e2b}
       - PORT=3103
       # Singpass FAPI v3 — DORMANT (disabled 2026-06-13)
       # Auth moved to Next.js /auth/demo. Re-enable for real NDI:

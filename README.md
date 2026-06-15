@@ -29,7 +29,7 @@ Staff get a unified dashboard with all incoming cases. Pre-session triage is don
 - **Case Writer Intelligence panel** — 3-stage causality engine (Foundation → Reasoning → Action) producing a structured `CausalGraph`: urgency assessment, root cause identification, hidden risk detection, information gap analysis, and agency routing with confidence scoring per causal node
 - **Multi-agency correspondence** — per-agency appeal letters generated deterministically from the `CausalGraph`; each letter is domain-weighted, agency-specific, sequenced by the document queue, and PDPA-compliant (resident PII held as `██` placeholders, completed by the writer inside gather.gov.sg)
 - **Copy to Gather bridge** — letters copied to clipboard for submission via gather.gov.sg; governance gate holds the copy action until MP or administrator approval is granted
-- Human-in-the-loop governance — five mandatory review gates ensuring no AI decision reaches formal correspondence without verified human sign-off
+- Human-in-the-loop governance — six mandatory review gates ensuring no AI decision reaches formal correspondence without verified human sign-off
 - Immutable audit trail — cryptographically chained case event log with SLA tracking per agency; distinguishes automated receipt acknowledgement (`AGY-RCV`) from substantive response (`AGY-RSP`)
 - **RBAC** — 5 roles (admin, writer, approver, registry, mp) with granular permission control
 
@@ -62,7 +62,7 @@ flowchart TB
   CF["☁️ Reverse HTTPS Tunnel"] -->|"HTTPS"| MPS
 
   subgraph MPS["MPS-Connect · Docker Compose · Local NAS"]
-    NEXT["Next.js 15\n:3080"] --> PROXY["AI Proxy\n:3103"]
+    NEXT["Next.js 16\n:3080"] --> PROXY["AI Proxy\n:3103"]
     NEXT --> PG["PostgreSQL 15\n:5432"]
     PROXY --> PG
   end
@@ -131,7 +131,7 @@ flowchart TB
   style D4 fill:#712b13,stroke:#f0997b,color:#f0997b
 ```
 
-**Cross-cutting concerns** span all layers: **Data Persistence** (PostgreSQL + SHA-256 chained SQLite audit log) and **Security · Governance · PDPA** (OWASP Top 10, RBAC, PII masking, 5 HITL gates, immutable audit trail).
+**Cross-cutting concerns** span all layers: **Data Persistence** (PostgreSQL + SHA-256 chained SQLite audit log) and **Security · Governance · PDPA** (OWASP Top 10 for LLM Applications 2025, RBAC, PII masking, 6 HITL gates, immutable audit trail).
 
 ### Case Lifecycle
 
@@ -178,10 +178,10 @@ Full detail — ERD, trust boundaries, deployment topology, auth flow, and all A
 
 | Layer | Technology |
 | --- | --- |
-| Frontend | Next.js 15 (App Router) + TypeScript |
+| Frontend | Next.js 16 (App Router) + TypeScript |
 | Database | PostgreSQL 15 with row-level audit trail |
 | AI proxy | Node.js + Express (server-side, internal only) |
-| AI inference | Ollama — `gemma4:e2b` (configurable via env var) |
+| AI inference | Ollama — `gemma3n:e2b` (configurable via env var) |
 | Speech-to-text | Wyoming Whisper via FastAPI bridge |
 | Text-to-speech | Wyoming Piper via FastAPI bridge |
 | File scanning | ClamAV daemon |
@@ -211,7 +211,7 @@ Full detail — ERD, trust boundaries, deployment topology, auth flow, and all A
 ### Prerequisites
 
 - Docker and Docker Compose
-- Ollama running with `gemma4:e2b` pulled (or any OpenAI-compatible endpoint)
+- Ollama running with `gemma3n:e2b` pulled (or any OpenAI-compatible endpoint)
 - `ai-bridge` Docker network (create with `docker network create ai-bridge` if it doesn't exist)
 
 ### Environment
@@ -223,7 +223,7 @@ POSTGRES_PASSWORD=your-db-password
 JWT_SECRET=your-32-char-minimum-secret
 VITE_STAFF_ACCESS_CODE=your-chosen-code
 OLLAMA_ENDPOINT=http://<ollama-host>:11434/api/chat
-AI_MODEL=gemma4:e2b
+AI_MODEL=gemma3n:e2b
 APP_URL=http://localhost:3080
 ```
 
@@ -257,7 +257,7 @@ docker exec -i mps-postgres psql -U mps -d mps_connect < ./db/seed_cases_300.sql
 | `JWT_SECRET` | JWT signing secret (min 32 chars) | — |
 | `VITE_STAFF_ACCESS_CODE` | Staff portal access code | — |
 | `OLLAMA_ENDPOINT` | Ollama chat API URL (server-side proxy only) | `http://localhost:11434/api/chat` |
-| `AI_MODEL` | Ollama model name | `gemma4:e4b` |
+| `AI_MODEL` | Ollama model name | `gemma3n:e2b` |
 | `APP_URL` | Public URL for CORS and upload links | `http://localhost:3080` |
 | `AI_KILL_SWITCH` | Emergency AI disable (IMDA Dim.1 compliance) | `false` |
 | `NODE_ENV` | Node environment | `production` |
@@ -307,22 +307,22 @@ mps-connect/
 
 ## Security
 
-This platform is built to OWASP LLM Top 10 compliance standards.
+This platform is built to [OWASP Top 10 for LLM Applications 2025](https://genai.owasp.org/llm-top-10/) compliance standards.
 
-### OWASP LLM Top 10 — Compliance Status
+### OWASP Top 10 for LLM Applications 2025 — Compliance Status
 
 | # | Risk | Status | Control |
 | --- | --- | --- | --- |
 | LLM01 | Prompt Injection | ✅ Mitigated | Server-side proxy, 9-layer input sanitization (incl. encoded payload detection), scope-restricted single-purpose identity, canary tokens, output anomaly check |
-| LLM02 | Insecure Output Handling | ✅ Mitigated | HTML/script stripping, output schema enforcement, whitelist validation |
-| LLM03 | Training Data Poisoning | ⚪ N/A | Read-only inference; no fine-tuning pipeline |
-| LLM04 | Model Denial of Service | ✅ Mitigated | Dual-layer rate limiting (nginx + proxy), request size caps, 30s timeout |
-| LLM05 | Supply Chain Vulnerabilities | ✅ Mitigated | GitHub Actions weekly `npm audit --audit-level=high` |
-| LLM06 | Sensitive Information Disclosure | ✅ Mitigated | Server-side PII masking on 5 SG-specific patterns before inference |
-| LLM07 | Insecure Plugin Design | ⚪ N/A | No plugin/tool-calling architecture |
-| LLM08 | Excessive Agency | ✅ Mitigated | `isUrgent` boolean gated server-side; tag injection stripped at proxy |
-| LLM09 | Overreliance | ✅ Mitigated | Mandatory AI disclosure in chat UI; consent gate; human review before action |
-| LLM10 | Model Theft | ✅ Mitigated | System prompt isolated in proxy container; never sent to browser |
+| LLM02 | Sensitive Information Disclosure | ✅ Mitigated | Server-side PII masking on 5 SG-specific patterns before inference; no PII in logs |
+| LLM03 | Supply Chain | ✅ Mitigated | GitHub Actions weekly `npm audit --audit-level=high`; pinned dependencies |
+| LLM04 | Data and Model Poisoning | ⚪ N/A | Read-only inference; no fine-tuning or training pipeline |
+| LLM05 | Improper Output Handling | ✅ Mitigated | HTML/script stripping, output schema enforcement, whitelist validation |
+| LLM06 | Excessive Agency | ✅ Mitigated | `isUrgent` boolean gated server-side; tag injection stripped at proxy |
+| LLM07 | System Prompt Leakage | ✅ Mitigated | System prompt isolated in proxy container; never sent to browser |
+| LLM08 | Vector and Embedding Weaknesses | ⚪ N/A | No RAG, vector store, or embedding pipeline |
+| LLM09 | Misinformation | ✅ Mitigated | Mandatory AI disclosure in chat UI; consent gate; human review before action |
+| LLM10 | Unbounded Consumption | ✅ Mitigated | Dual-layer rate limiting (nginx + proxy), request size caps, 30s timeout |
 
 ### Prompt Injection Defence (LLM01)
 
@@ -385,8 +385,8 @@ Applied in `maskPII()` before every Ollama call. The model never sees raw reside
 MPS-Connect is built in compliance with:
 
 - **Singapore PDPA** (§13, §20, §25, §26D) — consent collection, purpose limitation, breach notification
-- **IMDA Agentic AI Framework** (2nd Ed, 2026) — kill switch, accountability tracking, human oversight
-- **OWASP LLM Top 10** — full compliance matrix above
+- **IMDA Agentic AI Companion to the Model AI Governance Framework** (1st Ed, 2026) — kill switch, accountability tracking, human oversight
+- **OWASP Top 10 for LLM Applications 2025** — full compliance matrix above
 
 Governance documentation lives in `docs/`:
 
@@ -403,13 +403,13 @@ Governance documentation lives in `docs/`:
 **Why a server-side AI proxy?**
 The original architecture had the browser calling Ollama directly through an nginx proxy. That meant the system prompt was visible in DevTools network tabs and could be targeted for extraction or override. The proxy moves all security logic — system prompt, PII masking, canary tokens, injection sanitization, output validation — into a server container that the browser never contacts directly.
 
-**Why Next.js 15?**
-The project migrated from Vite SPA to Next.js 15 (App Router) to consolidate server actions, API routes, and SSR into a single framework. Server actions enabled the causality engine and document management to run server-side without a separate BFF layer, reducing container count and eliminating CORS complexity.
+**Why Next.js 16?**
+The project migrated from Vite SPA to Next.js 16 (App Router) to consolidate server actions, API routes, and SSR into a single framework. Server actions enabled the causality engine and document management to run server-side without a separate BFF layer, reducing container count and eliminating CORS complexity.
 
 **Why local inference?**
 Resident data is sensitive by nature. Running inference locally via Ollama means no case content ever leaves the network — no cloud API, no usage logs on a third-party server. It also eliminates per-session API costs at scale.
 
-**Why `gemma4:e2b`?**
+**Why `gemma3n:e2b`?**
 Tested against several models for this specific workload. It handles the colloquial, code-switching way residents actually speak well enough to extract structured case information reliably. Model selection here was empirical, not theoretical.
 
 **Why the consent gate?**
