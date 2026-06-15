@@ -141,10 +141,10 @@ Every case follows this state machine. Six Human-in-the-Loop gates ensure no AI 
 %%{init: {"theme": "dark"}}%%
 stateDiagram-v2
   [*] --> new : Resident submits
-  new --> triaged : AI categorisation
-  triaged --> drafting : Causality engine
-  drafting --> pending_approval : Writer submits (Gate 2+3)
-  pending_approval --> ai_review : AI Agent
+  new --> triaged : AI categorisation (Gate 1)
+  triaged --> drafting : Causality engine (Gate 4)
+  drafting --> pending_approval : Writer submits (Gate 2 + 3)
+  pending_approval --> ai_review : AI Agent (Gate 6)
   ai_review --> approved : Confidence ≥ threshold
   ai_review --> pending_approval : Escalated
   pending_approval --> approved : MP sign-off (Gate 5)
@@ -155,6 +155,8 @@ stateDiagram-v2
   ESCALATED --> sent : Follow-up
   closed --> [*]
 ```
+
+> **HITL Gates:** 1 — Low confidence warning (display) · 2 — Fact verification (submission blocker) · 3 — Agency override (action gate) · 4 — Causality opt-in (action gate) · 5 — MP approval (approval gate) · 6 — AI rule-engine pre-check (automatic)
 
 ### Architecture Documentation
 
@@ -344,7 +346,7 @@ All AI calls route through `mps-ai-proxy` — a dedicated server-side Express co
 
 **Canary token detection:** A per-request UUID is embedded in the system prompt. If the model echoes the canary in its response (extraction attempt), the proxy redacts it and emits `SECURITY_CANARY_TRIGGERED` in the audit log.
 
-### PII Masking (LLM06)
+### PII Masking (LLM02)
 
 Applied in `maskPII()` before every Ollama call. The model never sees raw resident PII.
 
@@ -366,7 +368,7 @@ Applied in `maskPII()` before every Ollama call. The model never sees raw reside
 | Resource limits | Memory and CPU caps on all services |
 | Network isolation | Proxy reachable only on `ai-bridge` — not from browser or host |
 
-### Supply Chain (LLM05)
+### Supply Chain (LLM03)
 
 `.github/workflows/security-audit.yml` runs on every push, pull request, and weekly (Sunday 02:00 SGT). Audits both frontend (`package.json`) and AI proxy (`api/package.json`). Pipeline fails on any high or critical CVE.
 
