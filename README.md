@@ -33,6 +33,145 @@ Staff get a unified dashboard with all incoming cases. Pre-session triage is don
 - Immutable audit trail — cryptographically chained case event log with SLA tracking per agency; distinguishes automated receipt acknowledgement (`AGY-RCV`) from substantive response (`AGY-RSP`)
 - **RBAC** — 5 roles (admin, writer, approver, registry, mp) with granular permission control
 
+### How AI is applied
+
+MPS-Connect uses AI in two distinct operational modes — each designed for a different setting, with different value to the people involved.
+
+**Online** — 24/7 digital intake
+
+When a resident connects online, the AI assistant guides them through articulating their concern in natural language — extracting structured case information from what would otherwise be an unstructured conversation. Once the case is submitted, the pipeline categorises it, assigns urgency, runs the 3-stage causality engine, and generates agency-specific appeal letters. The AI Agent then evaluates straightforward cases for auto-approval — those with clear categorisation, moderate urgency, and sufficient supporting information — freeing the constituency admin and MP to focus their review time on complex or high-urgency cases that genuinely require human judgement.
+
+**Physical** — live Meet-the-People Session
+
+During a live MPS, the case writer sits with the resident and captures their concern directly. Here the Causality Engine works as a real-time case-analysis tool — it processes faster and more intuitively than the online flow because the writer provides structured input from a face-to-face conversation. The engine surfaces hidden connections, cascading risks, and cross-agency dependencies that neither the writer nor the resident would have identified independently. A resident presenting a housing lease expiry may have an underlying employment gap, an expiring healthcare subsidy, and a child education concern that are all connected. The causality pipeline connects those dots and generates a coordinated multi-agency response — rather than isolated single-issue letters that miss the full picture.
+
+---
+
+## Architecture
+
+MPS-Connect runs on sovereign infrastructure — a local NAS in Singapore — with AI inference on a dedicated inference server connected via encrypted VPN. No resident data leaves the local network.
+
+### System Context
+
+```mermaid
+%%{init: {"theme": "dark"}}%%
+flowchart TB
+  RES["👤 Resident"] -->|"chat + voice"| MPS
+  STAFF["👔 Staff"] -->|"triage · drafting"| MPS
+  MP["🏛️ MP"] -->|"review · approval"| MPS
+  CF["☁️ Reverse HTTPS Tunnel"] -->|"HTTPS"| MPS
+
+  subgraph MPS["MPS-Connect · Docker Compose · Local NAS"]
+    NEXT["Next.js 15\n:3080"] --> PROXY["AI Proxy\n:3103"]
+    NEXT --> PG["PostgreSQL 15\n:5432"]
+    PROXY --> PG
+  end
+
+  PROXY -->|"Encrypted VPN\n(PII-masked)"| OLLAMA["🤖 Ollama · Inference Server"]
+  PROXY -->|"Docker network"| WYOMING["🎤 Wyoming Bridge\nWhisper STT · Piper TTS"]
+  MPS -->|"Copy to Gather\n(staff action)"| GATHER["🏛️ gather.gov.sg"]
+  GATHER -->|"Agency referral"| AGENCIES["🏢 Agencies\nHDB · MSF · MOM · CPF…"]
+
+  style MPS fill:#0c447c,stroke:#85b7eb,stroke-width:2px,color:#b5d4f4
+  style NEXT fill:#3c3489,stroke:#afa9ec,color:#cecbf6
+  style PROXY fill:#3c3489,stroke:#afa9ec,color:#cecbf6
+  style PG fill:#085041,stroke:#5dcaa5,color:#9fe1cb
+  style OLLAMA fill:#3c3489,stroke:#afa9ec,color:#afa9ec
+  style WYOMING fill:#3c3489,stroke:#afa9ec,color:#afa9ec
+  style RES fill:#085041,stroke:#5dcaa5,color:#9fe1cb
+  style STAFF fill:#085041,stroke:#5dcaa5,color:#9fe1cb
+  style MP fill:#085041,stroke:#5dcaa5,color:#9fe1cb
+  style CF fill:#444441,stroke:#b4b2a9,color:#d3d1c7
+  style GATHER fill:#444441,stroke:#b4b2a9,color:#d3d1c7
+  style AGENCIES fill:#444441,stroke:#b4b2a9,color:#d3d1c7
+```
+
+### Layered Architecture
+
+Four layers, two cross-cutting bars. Business defines the requirements — every technical layer exists to serve it. No layer skips its immediate neighbour.
+
+```mermaid
+%%{init: {"theme": "dark"}}%%
+flowchart TB
+  subgraph BL["🏛️ Business — what the organisation needs"]
+    direction LR
+    B1["Case\nManagement"] ~~~ B2["MPS Session\nWorkflow"] ~~~ B3["Letter Approval\nProcess"]
+  end
+  subgraph IL["📡 Integration — how data flows"]
+    direction LR
+    I1["PostgreSQL 15"] ~~~ I2["AI Proxy\n+ Ollama"] ~~~ I3["Wyoming\nSTT · TTS"]
+  end
+  subgraph NL["🧠 Intelligence — what AI does"]
+    direction LR
+    N1["Categorisation"] ~~~ N2["3-Stage Causality\nPipeline"] ~~~ N3["Letter\nGeneration"]
+  end
+  subgraph DL["🖥️ Delivery — how users see it"]
+    direction LR
+    D1["Resident\nChat"] ~~~ D2["Case Writer\nDashboard"] ~~~ D3["MP\nApprovals"] ~~~ D4["Analytics"]
+  end
+
+  BL --> IL --> NL --> DL
+
+  style BL fill:#085041,stroke:#5dcaa5,stroke-width:2px,color:#9fe1cb
+  style IL fill:#0c447c,stroke:#85b7eb,stroke-width:2px,color:#b5d4f4
+  style NL fill:#3c3489,stroke:#afa9ec,stroke-width:2px,color:#cecbf6
+  style DL fill:#712b13,stroke:#f0997b,stroke-width:2px,color:#f5c4b3
+  style B1 fill:#085041,stroke:#5dcaa5,color:#5dcaa5
+  style B2 fill:#085041,stroke:#5dcaa5,color:#5dcaa5
+  style B3 fill:#085041,stroke:#5dcaa5,color:#5dcaa5
+  style I1 fill:#0c447c,stroke:#85b7eb,color:#85b7eb
+  style I2 fill:#0c447c,stroke:#85b7eb,color:#85b7eb
+  style I3 fill:#0c447c,stroke:#85b7eb,color:#85b7eb
+  style N1 fill:#3c3489,stroke:#afa9ec,color:#afa9ec
+  style N2 fill:#3c3489,stroke:#afa9ec,color:#afa9ec
+  style N3 fill:#3c3489,stroke:#afa9ec,color:#afa9ec
+  style D1 fill:#712b13,stroke:#f0997b,color:#f0997b
+  style D2 fill:#712b13,stroke:#f0997b,color:#f0997b
+  style D3 fill:#712b13,stroke:#f0997b,color:#f0997b
+  style D4 fill:#712b13,stroke:#f0997b,color:#f0997b
+```
+
+**Cross-cutting concerns** span all layers: **Data Persistence** (PostgreSQL + SHA-256 chained SQLite audit log) and **Security · Governance · PDPA** (OWASP Top 10, RBAC, PII masking, 5 HITL gates, immutable audit trail).
+
+### Case Lifecycle
+
+Every case follows this state machine. Six Human-in-the-Loop gates ensure no AI decision reaches formal correspondence without verified human sign-off.
+
+```mermaid
+%%{init: {"theme": "dark"}}%%
+stateDiagram-v2
+  [*] --> new : Resident submits
+  new --> triaged : AI categorisation
+  triaged --> drafting : Causality engine
+  drafting --> pending_approval : Writer submits (Gate 2+3)
+  pending_approval --> ai_review : AI Agent
+  ai_review --> approved : Confidence ≥ threshold
+  ai_review --> pending_approval : Escalated
+  pending_approval --> approved : MP sign-off (Gate 5)
+  pending_approval --> drafting : Changes requested
+  approved --> sent : Copy to Gather
+  sent --> closed : Resolved
+  sent --> ESCALATED : SLA breach
+  ESCALATED --> sent : Follow-up
+  closed --> [*]
+```
+
+### Architecture Documentation
+
+Full detail — ERD, trust boundaries, deployment topology, auth flow, and all ADRs — lives in [`.ai-arch/`](./.ai-arch/):
+
+| Document | Contents |
+| --- | --- |
+| [Architecture Overview](./.ai-arch/06_ARCHITECTURE_OVERVIEW.md) | 4-layer conceptual model with full layer descriptions |
+| [Context Diagram (C1)](./.ai-arch/diagrams/CONTEXT.md) | System boundary, external actors, dependency risks |
+| [Container Diagram (C2)](./.ai-arch/diagrams/CONTAINERS.md) | Every service, port, protocol, ADR mapping |
+| [Data Flow](./.ai-arch/diagrams/DATAFLOW.md) | 4 trust boundaries, PII masking chain, data at rest |
+| [Deployment](./.ai-arch/diagrams/DEPLOYMENT.md) | Physical hosting zones, VPN topology, data residency |
+| [Auth Flow](./.ai-arch/diagrams/AUTH_FLOW.md) | Demo auth, persona picker, JWT session lifecycle |
+| [Case State Machine](./.ai-arch/diagrams/STATE_case.md) | Full lifecycle with HITL gates and SLA mapping |
+| [ERD](./.ai-arch/diagrams/ERD.md) | Database schema, PII classification, denormalisation |
+| [Architecture Decisions](./.ai-arch/07_ARCHITECTURE_DECISIONS.md) | All ADRs with alternatives considered |
+
 ---
 
 ## Tech Stack
