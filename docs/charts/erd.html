@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Entity Relationship Diagram — MPS-Connect</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #0d1117; color: #c9d1d9; margin: 0; padding: 20px; }
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    button { background: #238636; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; }
+    button:hover { background: #2ea043; }
+    #chart-container { background: #161b22; padding: 40px; border-radius: 8px; border: 1px solid #30363d; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 30px; }
+    .table-box { background: #085041; border: 2px solid #5dcaa5; border-radius: 8px; overflow: hidden; }
+    .table-title { background: #5dcaa5; color: #085041; padding: 10px; font-weight: bold; text-align: center; }
+    .table-body { padding: 15px; font-size: 14px; font-family: monospace; display: flex; flex-direction: column; gap: 5px; }
+    .row { display: flex; justify-content: space-between; }
+    .pk { color: #f0997b; font-weight: bold; }
+    .fk { color: #85b7eb; }
+    .pii-red { color: #ff7b72; font-weight: bold; }
+    .pii-yellow { color: #d2a8ff; font-weight: bold; }
+    .type { color: #8b949e; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Entity Relationship Diagram — MPS-Connect</h1>
+    <button onclick="downloadPNG()">Download as PNG</button>
+  </div>
+  <div id="chart-container">
+    <div class="table-box">
+      <div class="table-title">constituencies</div>
+      <div class="table-body">
+        <div class="row"><span><span class="pk">PK</span> id</span> <span class="type">serial</span></div>
+        <div class="row"><span>name</span> <span class="type">varchar</span></div>
+        <div class="row"><span>division</span> <span class="type">varchar</span></div>
+        <div class="row"><span>mp_name</span> <span class="type">varchar</span></div>
+        <div class="row"><span>party</span> <span class="type">varchar</span></div>
+      </div>
+    </div>
+    
+    <div class="table-box">
+      <div class="table-title">users</div>
+      <div class="table-body">
+        <div class="row"><span><span class="pk">PK</span> id</span> <span class="type">serial</span></div>
+        <div class="row"><span><span class="fk">FK</span> constituency_id</span> <span class="type">int</span></div>
+        <div class="row"><span class="pii-yellow">email</span> <span class="type">varchar</span></div>
+        <div class="row"><span>role</span> <span class="type">varchar</span></div>
+        <div class="row"><span class="pii-yellow">full_name</span> <span class="type">varchar</span></div>
+      </div>
+    </div>
+
+    <div class="table-box">
+      <div class="table-title">queue_entries</div>
+      <div class="table-body">
+        <div class="row"><span><span class="pk">PK</span> id</span> <span class="type">serial</span></div>
+        <div class="row"><span><span class="fk">FK</span> session_id</span> <span class="type">int</span></div>
+        <div class="row"><span><span class="fk">FK</span> constituency_id</span> <span class="type">int</span></div>
+        <div class="row"><span class="pii-yellow">resident_name</span> <span class="type">varchar</span></div>
+        <div class="row"><span class="pii-red">resident_nric</span> <span class="type">varchar</span></div>
+        <div class="row"><span class="pii-red">resident_phone</span> <span class="type">varchar</span></div>
+      </div>
+    </div>
+
+    <div class="table-box">
+      <div class="table-title">cases</div>
+      <div class="table-body">
+        <div class="row"><span><span class="pk">PK</span> id</span> <span class="type">serial</span></div>
+        <div class="row"><span><span class="fk">FK</span> constituency_id</span> <span class="type">int</span></div>
+        <div class="row"><span>status / urgency</span> <span class="type">varchar</span></div>
+        <div class="row"><span>causal_graph</span> <span class="type">jsonb</span></div>
+        <div class="row"><span>messages</span> <span class="type">jsonb</span></div>
+        <div class="row"><span class="pii-red">resident_nric</span> <span class="type">varchar</span></div>
+        <div class="row"><span class="pii-red">resident_phone</span> <span class="type">varchar</span></div>
+        <div class="row"><span class="pii-red">resident_address</span> <span class="type">text</span></div>
+      </div>
+    </div>
+    
+    <div class="table-box">
+      <div class="table-title">case_events (Append-only)</div>
+      <div class="table-body">
+        <div class="row"><span><span class="pk">PK</span> id</span> <span class="type">bigserial</span></div>
+        <div class="row"><span><span class="fk">FK</span> case_id</span> <span class="type">int</span></div>
+        <div class="row"><span><span class="fk">FK</span> actor_id</span> <span class="type">int</span></div>
+        <div class="row"><span>actor_role</span> <span class="type">varchar</span></div>
+        <div class="row"><span>action</span> <span class="type">varchar</span></div>
+        <div class="row"><span>detail</span> <span class="type">jsonb</span></div>
+      </div>
+    </div>
+
+    <div class="table-box">
+      <div class="table-title">letters</div>
+      <div class="table-body">
+        <div class="row"><span><span class="pk">PK</span> id</span> <span class="type">serial</span></div>
+        <div class="row"><span><span class="fk">FK</span> case_id</span> <span class="type">int</span></div>
+        <div class="row"><span>agency</span> <span class="type">varchar</span></div>
+        <div class="row"><span class="pii-yellow">content</span> <span class="type">text</span></div>
+        <div class="row"><span>status</span> <span class="type">varchar</span></div>
+      </div>
+    </div>
+  </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script>
+    function downloadPNG() {
+      html2canvas(document.querySelector("#chart-container")).then(canvas => {
+        let link = document.createElement('a');
+        link.download = 'erd.png';
+        link.href = canvas.toDataURL();
+        link.click();
+      });
+    }
+  </script>
+</body>
+</html>

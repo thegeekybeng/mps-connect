@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Container Diagram (C2) — MPS-Connect</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #0d1117; color: #c9d1d9; margin: 0; padding: 20px; }
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    button { background: #238636; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; }
+    button:hover { background: #2ea043; }
+    #chart-container { background: #161b22; padding: 40px; border-radius: 8px; border: 1px solid #30363d; display: flex; flex-direction: column; gap: 30px; align-items: center; }
+    .external { display: flex; gap: 20px; width: 100%; justify-content: center; }
+    .box { padding: 15px; border-radius: 6px; text-align: center; font-size: 14px; white-space: pre-wrap; display: flex; align-items: center; justify-content: center; }
+    .user { background: #085041; border: 1px solid #5dcaa5; color: #9fe1cb; }
+    .service { background: #444441; border: 1px solid #b4b2a9; color: #d3d1c7; }
+    .ai { background: #3c3489; border: 1px solid #afa9ec; color: #afa9ec; }
+    .edgenode { background: rgba(12,26,46,0.5); border: 2px solid #85b7eb; padding: 30px; border-radius: 12px; width: 100%; max-width: 800px; }
+    .edgenode-title { color: #b5d4f4; font-weight: bold; margin-bottom: 20px; text-align: center; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; }
+    
+    .app { background: #3c3489; border: 2px solid #afa9ec; color: #cecbf6; }
+    .db { background: #085041; border: 2px solid #5dcaa5; color: #9fe1cb; }
+    .sec { background: #3c1010; border: 2px solid #f0997b; color: #f0997b; }
+    .redis { background: #085041; border: 1px dashed #5dcaa5; color: #5dcaa5; }
+    .hr { border-top: 1px solid currentColor; margin: 5px 0; opacity: 0.5; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Container Diagram (C2) — MPS-Connect</h1>
+    <button onclick="downloadPNG()">Download as PNG</button>
+  </div>
+  <div id="chart-container">
+    <div class="external">
+      <div class="box user">👤 Resident</div>
+      <div class="box user">👔 Staff / MP</div>
+      <div class="box service">☁️ Cloudflare<br>Tunnel</div>
+      <div class="box ai">🤖 Ollama<br>[VPN_IP_REDACTED]:11434 (Encrypted Mesh VPN)<br>gemma4:e2b · gemma4:12b-mlx<br>qwen3.6:27b</div>
+    </div>
+    
+    <div class="edgenode">
+      <div class="edgenode-title">Edge Storage Node · Docker Compose · ai-bridge network</div>
+      <div style="text-align:center; margin-bottom: 20px;">
+        <div class="box service" style="display:inline-block;">master-nginx<br>(infrastructure)<br>HTTPS :443 → :3080</div>
+      </div>
+      <div class="grid">
+        <div class="box app" style="flex-direction:column;"><strong>mps-connect</strong><br>Next.js 16 App Router<br>:3080<div class="hr"></div>Server Components<br>Server Actions<br>JWT auth · RBAC<br>FloatingNav<br>Middleware</div>
+        <div class="box app" style="flex-direction:column;"><strong>mps-ai-proxy</strong><br>Node.js + Express<br>:3103<div class="hr"></div>PII masking<br>Canary tokens<br>Injection filter<br>Ollama bridge<br>AI audit log (SQLite)</div>
+        <div class="box sec" style="flex-direction:column;"><strong>mps-clamav</strong><br>ClamAV 1.x<br>:3310<div class="hr"></div>File upload scanning<br>(Phase 2)<br>Graceful degradation</div>
+        <div class="box db" style="flex-direction:column;"><strong>mps-postgres</strong><br>PostgreSQL 15<br>:5432<div class="hr"></div>cases · sessions<br>queue_entries<br>letters · constituencies<br>case_events<br>agent_decisions<br>agent_preferences<br>document_reqs<br>upload_tokens</div>
+        <div class="box redis" style="flex-direction:column;"><strong>mps-redis</strong><br>Redis 7<br>:6379<div class="hr"></div>Queue pub/sub<br>(provisioned;<br>SSE not yet wired)</div>
+        <div class="box service" style="flex-direction:column;"><strong>mps-migrate</strong><br>postgres:15-alpine<br>(runs once · exits)<br>Applies schema.sql</div>
+      </div>
+    </div>
+  </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script>
+    function downloadPNG() {
+      html2canvas(document.querySelector("#chart-container")).then(canvas => {
+        let link = document.createElement('a');
+        link.download = 'containers.png';
+        link.href = canvas.toDataURL();
+        link.click();
+      });
+    }
+  </script>
+</body>
+</html>

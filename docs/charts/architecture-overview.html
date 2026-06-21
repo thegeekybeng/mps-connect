@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Architecture Overview — MPS-Connect</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #0d1117; color: #c9d1d9; margin: 0; padding: 20px; }
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    button { background: #238636; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; }
+    button:hover { background: #2ea043; }
+    #chart-container { background: #161b22; padding: 40px; border-radius: 8px; border: 1px solid #30363d; display: grid; grid-template-columns: 250px 1fr 250px; gap: 20px; position: relative; }
+    .layer-group { display: flex; flex-direction: column; gap: 20px; grid-column: 2; }
+    .layer { padding: 20px; border-radius: 8px; border: 2px solid; display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+    .layer-title { width: 100%; font-weight: bold; margin-bottom: 10px; text-align: center; }
+    .box { padding: 15px; border-radius: 6px; text-align: center; font-size: 14px; white-space: pre-wrap; display: flex; align-items: center; justify-content: center; }
+    
+    .bl { background: rgba(8,80,65,0.2); border-color: #5dcaa5; }
+    .bl .box { background: #085041; border: 1px solid #5dcaa5; color: #9fe1cb; }
+    
+    .il { background: rgba(12,68,124,0.2); border-color: #85b7eb; }
+    .il .box { background: #0c447c; border: 1px solid #85b7eb; color: #b5d4f4; }
+    
+    .nl { background: rgba(60,52,137,0.2); border-color: #afa9ec; }
+    .nl .box { background: #3c3489; border: 1px solid #afa9ec; color: #cecbf6; }
+    
+    .dl { background: rgba(113,43,19,0.2); border-color: #f0997b; }
+    .dl .box { background: #712b13; border: 1px solid #f0997b; color: #f5c4b3; }
+    
+    .side-panel { padding: 20px; border-radius: 8px; border: 2px solid; display: flex; flex-direction: column; gap: 15px; text-align: center; font-size: 14px; }
+    .dp { background: rgba(12,68,124,0.2); border-color: #85b7eb; color: #b5d4f4; grid-column: 1; grid-row: 1; }
+    .sg { background: rgba(68,68,65,0.2); border-color: #b4b2a9; color: #d3d1c7; grid-column: 3; grid-row: 1; }
+    .hr { border-top: 1px solid currentColor; margin: 5px 0; opacity: 0.5; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Conceptual Architecture — MPS-Connect</h1>
+    <button onclick="downloadPNG()">Download as PNG</button>
+  </div>
+  <div id="chart-container">
+    <div class="side-panel dp">
+      <strong>💾 DATA PERSISTENCE</strong>
+      <div class="hr"></div>
+      <div>Case store<br>PostgreSQL 15<br>(cases · sessions · queue)</div>
+      <div class="hr"></div>
+      <div>Workflow audit<br>case_events (append-only)</div>
+      <div class="hr"></div>
+      <div>AI audit log<br>✅ SHA-256 chain (SQLite)</div>
+    </div>
+    
+    <div class="layer-group">
+      <div class="layer bl">
+        <div class="layer-title">🏛️ BUSINESS LAYER · what the organisation needs</div>
+        <div class="box">Constituency<br>Case Management</div>
+        <div class="box">Meet-the-People<br>Session Workflow</div>
+        <div class="box">Letter Approval<br>Process</div>
+        <div class="box">Multi-Role<br>Decision Support</div>
+      </div>
+      
+      <div class="layer il">
+        <div class="layer-title">📡 INTEGRATION LAYER · how data flows</div>
+        <div class="box">PostgreSQL 15<br>Case & Session Store</div>
+        <div class="box">Redis 7<br>Queue Pub/Sub<br>⚠ provisioned only</div>
+        <div class="box">AI Proxy<br>Ollama + Speech Bridge</div>
+        <div class="box">Demo Auth<br>Built-in /auth/demo<br>✅ Active</div>
+        <div class="box">Wyoming Bridge<br>STT (Whisper)<br>TTS (Piper)</div>
+      </div>
+      
+      <div class="layer nl">
+        <div class="layer-title">🧠 INTELLIGENCE LAYER · what AI does with it</div>
+        <div class="box">AI Categorise<br>/api/ai/categorize</div>
+        <div class="box">Causality<br>Pipeline (3-stage)</div>
+        <div class="box">Letter Draft<br>Generation</div>
+        <div class="box">RBAC<br>Permission Engine</div>
+        <div class="box">Voice AI<br>STT · TTS · Translate</div>
+      </div>
+      
+      <div class="layer dl">
+        <div class="layer-title">🖥️ DELIVERY LAYER · how users access it</div>
+        <div class="box">Resident Chat<br>✅ Voice + Text</div>
+        <div class="box">Case Writer<br>Dashboard</div>
+        <div class="box">MP Approval<br>✅ Built</div>
+        <div class="box">Analytics<br>✅ Built</div>
+        <div class="box">Registry<br>Counter</div>
+      </div>
+    </div>
+    
+    <div class="side-panel sg">
+      <strong>🔒 SECURITY · GOVERNANCE · PDPA</strong>
+      <div class="hr"></div>
+      <div>OWASP Top 10<br>JWT Auth · RBAC · PII Masking</div>
+      <div class="hr"></div>
+      <div>5 HitL gates<br>ADRs · Immutable audit<br>PDPA 7-yr retention</div>
+    </div>
+  </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script>
+    function downloadPNG() {
+      html2canvas(document.querySelector("#chart-container")).then(canvas => {
+        let link = document.createElement('a');
+        link.download = 'architecture-overview.png';
+        link.href = canvas.toDataURL();
+        link.click();
+      });
+    }
+  </script>
+</body>
+</html>

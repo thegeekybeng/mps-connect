@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Data Flow Diagram — MPS-Connect</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #0d1117; color: #c9d1d9; margin: 0; padding: 20px; }
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    button { background: #238636; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; }
+    button:hover { background: #2ea043; }
+    #chart-container { background: #161b22; padding: 40px; border-radius: 8px; border: 1px solid #30363d; display: flex; flex-direction: column; gap: 30px; }
+    .box { padding: 15px; border-radius: 6px; text-align: center; font-size: 14px; white-space: pre-wrap; display: flex; align-items: center; justify-content: center; }
+    .zone { border: 2px solid; padding: 20px; border-radius: 12px; margin-bottom: 20px; }
+    .zone-title { font-weight: bold; margin-bottom: 15px; text-align: center; }
+    .flex-row { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+    
+    .src { background: #085041; border: 1px solid #5dcaa5; color: #9fe1cb; }
+    .bound { border-color: #f0997b; background: rgba(42,21,21,0.5); }
+    .proc { border-color: #85b7eb; background: rgba(12,26,46,0.5); }
+    .app { background: #1a1a3e; border: 1px solid #afa9ec; color: #cecbf6; padding: 15px; border-radius: 8px; }
+    .db { background: #085041; border: 1px solid #5dcaa5; color: #9fe1cb; }
+    
+    .pii { color: #ff7b72; font-weight: bold; }
+    .conf { color: #d2a8ff; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Data Flow Diagram — MPS-Connect</h1>
+    <button onclick="downloadPNG()">Download as PNG</button>
+  </div>
+  <div id="chart-container">
+    <div class="flex-row">
+      <div class="box src">👤 Resident<br>(chat + voice)<br><span class="pii">🔴 NRIC/Phone</span></div>
+      <div class="box src">📋 Registry<br>(walk-in)<br><span class="pii">🔴 NRIC/Phone</span></div>
+      <div class="box src">✍️ Case Writer</div>
+      <div class="box src">🏛️ MP</div>
+    </div>
+    
+    <div class="zone bound">
+      <div class="zone-title" style="color: #f5c4b3;">Trust Boundary 1 — Browser → Edge Storage Node (HTTPS via Cloudflare TLS)</div>
+      <div class="box" style="background:#712b13; color:#f5c4b3; border: 1px solid #f0997b; margin: 0 auto; width: 200px;">☁️ Cloudflare</div>
+    </div>
+    
+    <div class="zone proc">
+      <div class="zone-title" style="color: #b5d4f4;">Processing — Edge Storage Node Docker Network</div>
+      <div class="flex-row" style="margin-bottom: 20px;">
+        <div class="app"><strong>Next.js Server</strong><br>JWT session check<br>RBAC check<br>Server Actions</div>
+        <div class="box" style="background:#2a2a1a; color:#d3d1c7; border: 1px solid #b4b2a9;">Trust Boundary 2<br>Next.js → AI Proxy</div>
+        <div class="app"><strong>Express AI Proxy</strong><br>PII Masking<br>Canary tokens<br>Injection filter<br>Audit chain logging</div>
+      </div>
+    </div>
+
+    <div class="zone bound">
+      <div class="zone-title" style="color: #f5c4b3;">Trust Boundary 3 — AI Proxy → External Compute</div>
+      <div class="flex-row">
+        <div class="app" style="background:#3c3489; border-color:#afa9ec;"><strong>Edge Compute Node (Encrypted Mesh VPN)</strong><br>Ollama (gemma4:e4b)<br>Masked text only</div>
+        <div class="app" style="background:#3c3489; border-color:#afa9ec;"><strong>Wyoming Bridge (Docker)</strong><br>Whisper STT / Piper TTS<br>Audio bytes only</div>
+      </div>
+    </div>
+
+    <div class="zone proc" style="border-color: #5dcaa5; background: rgba(8,80,65,0.2);">
+      <div class="zone-title" style="color: #9fe1cb;">Data Destinations — Edge Storage Node PostgreSQL</div>
+      <div class="flex-row">
+        <div class="box db">cases table<br><span class="pii">🔴 PII</span> | <span class="conf">🟡 Confidential</span></div>
+        <div class="box db">queue_entries<br><span class="pii">🔴 PII</span> (30 days)</div>
+        <div class="box db">case_events<br>No PII (immutable)</div>
+        <div class="box db">audit.db (SQLite)<br>SHA-256 chained</div>
+      </div>
+    </div>
+    
+    <div class="zone bound">
+      <div class="zone-title" style="color: #d3d1c7;">Trust Boundary 4 — Edge Storage Node → External</div>
+      <div class="box" style="background:#444441; color:#d3d1c7; border: 1px solid #b4b2a9; margin: 0 auto; width: 300px;">Copy to Gather (Manual)<br>Letter content only (No NRIC)</div>
+    </div>
+  </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script>
+    function downloadPNG() {
+      html2canvas(document.querySelector("#chart-container")).then(canvas => {
+        let link = document.createElement('a');
+        link.download = 'dataflow.png';
+        link.href = canvas.toDataURL();
+        link.click();
+      });
+    }
+  </script>
+</body>
+</html>

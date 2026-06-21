@@ -53,83 +53,13 @@ MPS-Connect runs on sovereign infrastructure — a local NAS in Singapore — wi
 
 ### System Context
 
-```mermaid
-%%{init: {"theme": "dark"}}%%
-flowchart TB
-  RES["👤 Resident"] -->|"chat + voice"| MPS
-  STAFF["👔 Staff"] -->|"triage · drafting"| MPS
-  MP["🏛️ MP"] -->|"review · approval"| MPS
-  CF["☁️ Reverse HTTPS Tunnel"] -->|"HTTPS"| MPS
-
-  subgraph MPS["MPS-Connect · Docker Compose · Local NAS"]
-    NEXT["Next.js 16\n:3080"] --> PROXY["AI Proxy\n:3103"]
-    NEXT --> PG["PostgreSQL 15\n:5432"]
-    PROXY --> PG
-  end
-
-  PROXY -->|"Encrypted VPN\n(PII-masked)"| OLLAMA["🤖 Ollama · Inference Server"]
-  PROXY -->|"Docker network"| WYOMING["🎤 Wyoming Bridge\nWhisper STT · Piper TTS"]
-  MPS -->|"Copy to Gather\n(staff action)"| GATHER["🏛️ gather.gov.sg"]
-  GATHER -->|"Agency referral"| AGENCIES["🏢 Agencies\nHDB · MSF · MOM · CPF…"]
-
-  style MPS fill:#0c447c,stroke:#85b7eb,stroke-width:2px,color:#b5d4f4
-  style NEXT fill:#3c3489,stroke:#afa9ec,color:#cecbf6
-  style PROXY fill:#3c3489,stroke:#afa9ec,color:#cecbf6
-  style PG fill:#085041,stroke:#5dcaa5,color:#9fe1cb
-  style OLLAMA fill:#3c3489,stroke:#afa9ec,color:#afa9ec
-  style WYOMING fill:#3c3489,stroke:#afa9ec,color:#afa9ec
-  style RES fill:#085041,stroke:#5dcaa5,color:#9fe1cb
-  style STAFF fill:#085041,stroke:#5dcaa5,color:#9fe1cb
-  style MP fill:#085041,stroke:#5dcaa5,color:#9fe1cb
-  style CF fill:#444441,stroke:#b4b2a9,color:#d3d1c7
-  style GATHER fill:#444441,stroke:#b4b2a9,color:#d3d1c7
-  style AGENCIES fill:#444441,stroke:#b4b2a9,color:#d3d1c7
-```
+👉 **[View the High-Res HTML System Context Chart](docs/charts/context.html)**
 
 ### Layered Architecture
 
 Four layers, two cross-cutting bars. Business defines the requirements — every technical layer exists to serve it. No layer skips its immediate neighbour.
 
-```mermaid
-%%{init: {"theme": "dark"}}%%
-flowchart TB
-  subgraph BL["🏛️ Business — what the organisation needs"]
-    direction LR
-    B1["Case\nManagement"] ~~~ B2["MPS Session\nWorkflow"] ~~~ B3["Letter Approval\nProcess"]
-  end
-  subgraph IL["📡 Integration — how data flows"]
-    direction LR
-    I1["PostgreSQL 15"] ~~~ I2["AI Proxy\n+ Ollama"] ~~~ I3["Wyoming\nSTT · TTS"]
-  end
-  subgraph NL["🧠 Intelligence — what AI does"]
-    direction LR
-    N1["Categorisation"] ~~~ N2["3-Stage Causality\nPipeline"] ~~~ N3["Letter\nGeneration"]
-  end
-  subgraph DL["🖥️ Delivery — how users see it"]
-    direction LR
-    D1["Resident\nChat"] ~~~ D2["Case Writer\nDashboard"] ~~~ D3["MP\nApprovals"] ~~~ D4["Analytics"]
-  end
-
-  BL --> IL --> NL --> DL
-
-  style BL fill:#085041,stroke:#5dcaa5,stroke-width:2px,color:#9fe1cb
-  style IL fill:#0c447c,stroke:#85b7eb,stroke-width:2px,color:#b5d4f4
-  style NL fill:#3c3489,stroke:#afa9ec,stroke-width:2px,color:#cecbf6
-  style DL fill:#712b13,stroke:#f0997b,stroke-width:2px,color:#f5c4b3
-  style B1 fill:#085041,stroke:#5dcaa5,color:#5dcaa5
-  style B2 fill:#085041,stroke:#5dcaa5,color:#5dcaa5
-  style B3 fill:#085041,stroke:#5dcaa5,color:#5dcaa5
-  style I1 fill:#0c447c,stroke:#85b7eb,color:#85b7eb
-  style I2 fill:#0c447c,stroke:#85b7eb,color:#85b7eb
-  style I3 fill:#0c447c,stroke:#85b7eb,color:#85b7eb
-  style N1 fill:#3c3489,stroke:#afa9ec,color:#afa9ec
-  style N2 fill:#3c3489,stroke:#afa9ec,color:#afa9ec
-  style N3 fill:#3c3489,stroke:#afa9ec,color:#afa9ec
-  style D1 fill:#712b13,stroke:#f0997b,color:#f0997b
-  style D2 fill:#712b13,stroke:#f0997b,color:#f0997b
-  style D3 fill:#712b13,stroke:#f0997b,color:#f0997b
-  style D4 fill:#712b13,stroke:#f0997b,color:#f0997b
-```
+👉 **[View the High-Res HTML Layered Architecture Chart](docs/charts/architecture-overview.html)**
 
 **Cross-cutting concerns** span all layers: **Data Persistence** (PostgreSQL + SHA-256 chained SQLite audit log) and **Security · Governance · PDPA** (OWASP Top 10 for LLM Applications 2025, RBAC, PII masking, 6 HITL gates, immutable audit trail).
 
@@ -137,24 +67,7 @@ flowchart TB
 
 Every case follows this state machine. Six Human-in-the-Loop gates ensure no AI decision reaches formal correspondence without verified human sign-off.
 
-```mermaid
-%%{init: {"theme": "dark"}}%%
-stateDiagram-v2
-  [*] --> new : Resident submits
-  new --> triaged : AI categorisation (Gate 1)
-  triaged --> drafting : Causality engine (Gate 4)
-  drafting --> pending_approval : Writer submits (Gate 2 + 3)
-  pending_approval --> ai_review : AI Agent (Gate 6)
-  ai_review --> approved : Confidence ≥ threshold
-  ai_review --> pending_approval : Escalated
-  pending_approval --> approved : MP sign-off (Gate 5)
-  pending_approval --> drafting : Changes requested
-  approved --> sent : Copy to Gather
-  sent --> closed : Resolved
-  sent --> ESCALATED : SLA breach
-  ESCALATED --> sent : Follow-up
-  closed --> [*]
-```
+👉 **[View the High-Res HTML Case Lifecycle Chart](docs/charts/state_case.html)**
 
 > **HITL Gates:** 1 — Low confidence warning (display) · 2 — Fact verification (submission blocker) · 3 — Agency override (action gate) · 4 — Causality opt-in (action gate) · 5 — MP approval (approval gate) · 6 — AI rule-engine pre-check (automatic)
 
@@ -164,14 +77,14 @@ Full detail — ERD, trust boundaries, deployment topology, auth flow, and all A
 
 | Document | Contents |
 | --- | --- |
-| [Architecture Overview](./.ai-arch/06_ARCHITECTURE_OVERVIEW.md) | 4-layer conceptual model with full layer descriptions |
-| [Context Diagram (C1)](./.ai-arch/diagrams/CONTEXT.md) | System boundary, external actors, dependency risks |
-| [Container Diagram (C2)](./.ai-arch/diagrams/CONTAINERS.md) | Every service, port, protocol, ADR mapping |
-| [Data Flow](./.ai-arch/diagrams/DATAFLOW.md) | 4 trust boundaries, PII masking chain, data at rest |
-| [Deployment](./.ai-arch/diagrams/DEPLOYMENT.md) | Physical hosting zones, VPN topology, data residency |
-| [Auth Flow](./.ai-arch/diagrams/AUTH_FLOW.md) | Demo auth, persona picker, JWT session lifecycle |
-| [Case State Machine](./.ai-arch/diagrams/STATE_case.md) | Full lifecycle with HITL gates and SLA mapping |
-| [ERD](./.ai-arch/diagrams/ERD.md) | Database schema, PII classification, denormalisation |
+| [Architecture Overview](docs/charts/architecture-overview.html) | 4-layer conceptual model with full layer descriptions |
+| [Context Diagram (C1)](docs/charts/context.html) | System boundary, external actors, dependency risks |
+| [Container Diagram (C2)](docs/charts/containers.html) | Every service, port, protocol, ADR mapping |
+| [Data Flow](docs/charts/dataflow.html) | 4 trust boundaries, PII masking chain, data at rest |
+| [Deployment](docs/charts/deployment.html) | Physical hosting zones, VPN topology, data residency |
+| [Auth Flow](docs/charts/auth_flow.html) | Demo auth, persona picker, JWT session lifecycle |
+| [Case State Machine](docs/charts/state_case.html) | Full lifecycle with HITL gates and SLA mapping |
+| [ERD](docs/charts/erd.html) | Database schema, PII classification, denormalisation |
 | [Architecture Decisions](./.ai-arch/07_ARCHITECTURE_DECISIONS.md) | All ADRs with alternatives considered |
 
 ---

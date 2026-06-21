@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Authentication Flow — MPS-Connect</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #0d1117; color: #c9d1d9; margin: 0; padding: 20px; }
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    button { background: #238636; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; }
+    button:hover { background: #2ea043; }
+    #chart-container { background: #161b22; padding: 40px; border-radius: 8px; border: 1px solid #30363d; display: flex; flex-direction: column; align-items: center; gap: 30px; }
+    .box { padding: 15px; border-radius: 6px; text-align: center; font-size: 14px; white-space: pre-wrap; display: flex; align-items: center; justify-content: center; flex-direction: column; }
+    .zone { border: 2px solid; padding: 20px; border-radius: 12px; display: flex; gap: 20px; justify-content: center; width: 100%; max-width: 800px; }
+    .zone-title { font-weight: bold; margin-bottom: 15px; text-align: center; width: 100%; }
+    
+    .landing { background: #0c447c; border: 2px solid #85b7eb; color: #b5d4f4; width: 300px; margin: 0 auto; }
+    .entry { border-color: #444; background: rgba(26,26,46,0.5); }
+    .auth { border-color: #5dcaa5; background: rgba(26,58,26,0.5); }
+    .dest { border-color: #f0997b; background: rgba(113,43,19,0.5); }
+    
+    .btn { background: #085041; border: 1px solid #5dcaa5; color: #9fe1cb; cursor: default; }
+    .pick { background: #1a3a1a; border: 1px solid #5dcaa5; color: #9fe1cb; width: 250px; }
+    .dest-box { background: #712b13; border: 1px solid #f0997b; color: #f0997b; flex: 1; min-width: 150px; }
+    .chat { background: #085041; border: 1px solid #5dcaa5; color: #9fe1cb; flex: 1; min-width: 150px; }
+    .postal { background: #3c3489; border: 1px solid #afa9ec; color: #afa9ec; margin: 0 auto; width: 200px; }
+    
+    .arrow { color: #888; font-size: 24px; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Authentication Flow — MPS-Connect</h1>
+    <button onclick="downloadPNG()">Download as PNG</button>
+  </div>
+  <div id="chart-container">
+    <div class="box landing">🏠 Landing Page<br>mps-connect.example.com<br><br>Your MP is Here to Help</div>
+    <div class="arrow">↓</div>
+    
+    <div class="zone entry" style="flex-wrap: wrap;">
+      <div class="zone-title" style="color:#aaa;">Two Entry Points</div>
+      <div class="box btn">👤 Try as Resident<br>flow=resident</div>
+      <div class="box btn">👔 Staff Login<br>flow=staff</div>
+    </div>
+    <div class="arrow">↓</div>
+    
+    <div class="zone auth" style="flex-wrap: wrap;">
+      <div class="zone-title" style="color:#9fe1cb;">Demo Auth Page · /auth/demo</div>
+      <div class="box pick"><strong>Resident Persona Picker</strong><br><br>4 named personas:<br>· Mdm Tan (72, HDB lease)<br>· Mr Kumar (35, salary dispute)<br>· Ms Lim (28, financial aid)<br>· Mr Ali (45, legal referral)<br><br>Click → demoResidentLoginAction()<br>→ JWT{role:resident, nricMasked}</div>
+      <div class="box pick"><strong>Staff Role Picker</strong><br><br>5 roles:<br>· System Admin<br>· MP Office<br>· Constituency Admin<br>· Case Writer<br>· Registry Counter<br><br>Click → demoStaffLoginAction()<br>→ DB lookup → JWT{role, userId}</div>
+    </div>
+    <div class="arrow">↓</div>
+    
+    <div class="box postal">📮 Postal Code Entry<br>/enter-postal-code<br><br>6-digit postal code input<br>→ constituency_id</div>
+    <div class="arrow">↓</div>
+
+    <div class="zone dest" style="flex-wrap: wrap;">
+      <div class="zone-title" style="color:#f5c4b3;">Authenticated Destinations</div>
+      <div style="display:flex; gap:15px; width:100%; flex-wrap:wrap; justify-content:center;">
+        <div class="box chat">💬 Resident Chat<br>/chat<br>Voice + Text</div>
+        <div class="box dest-box">📊 Admin Dashboard<br>/dashboard</div>
+        <div class="box dest-box">🏛️ MP Approvals<br>/dashboard/approvals</div>
+        <div class="box dest-box">✍️ Case Writer<br>/dashboard/cases</div>
+        <div class="box dest-box">📋 Registry Counter<br>/dashboard/queue</div>
+      </div>
+    </div>
+  </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script>
+    function downloadPNG() {
+      html2canvas(document.querySelector("#chart-container")).then(canvas => {
+        let link = document.createElement('a');
+        link.download = 'auth_flow.png';
+        link.href = canvas.toDataURL();
+        link.click();
+      });
+    }
+  </script>
+</body>
+</html>

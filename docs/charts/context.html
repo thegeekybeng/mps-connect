@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Context Diagram (C1) — MPS-Connect</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #0d1117; color: #c9d1d9; margin: 0; padding: 20px; }
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    button { background: #238636; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; }
+    button:hover { background: #2ea043; }
+    #chart-container { background: #161b22; padding: 40px; border-radius: 8px; border: 1px solid #30363d; display: flex; flex-direction: column; align-items: center; gap: 40px; }
+    .system-box { background: rgba(12,68,124,0.2); border: 3px solid #85b7eb; padding: 40px; border-radius: 12px; text-align: center; margin: 0 auto; width: 60%; }
+    .core { background: #3c3489; border: 2px solid #afa9ec; color: #cecbf6; padding: 30px; border-radius: 8px; font-weight: bold; font-size: 18px; }
+    .external-group { display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; width: 100%; border: 1px solid #444; padding: 20px; border-radius: 12px; background: rgba(26,26,46,0.5); }
+    .box { padding: 15px; border-radius: 6px; text-align: center; font-size: 14px; display: flex; align-items: center; justify-content: center; flex: 1 1 200px; white-space: pre-wrap; }
+    .user { background: #085041; border: 1px solid #5dcaa5; color: #9fe1cb; }
+    .service { background: #444441; border: 1px solid #b4b2a9; color: #d3d1c7; }
+    .ai { background: #3c3489; border: 1px solid #afa9ec; color: #afa9ec; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Context Diagram (C1) — MPS-Connect</h1>
+    <button onclick="downloadPNG()">Download as PNG</button>
+  </div>
+  <div id="chart-container">
+    <div class="external-group">
+      <div class="box user">👤 Resident<br>(home / phone)<br>Demo persona login</div>
+      <div class="box user">🏛️ Member of Parliament<br>(mobile / laptop)<br>Demo role login</div>
+      <div class="box user">👔 Constituency Staff<br>(admin / writer / registry)<br>Demo role login</div>
+      <div class="box service">☁️ Cloudflare Tunnel<br>(public HTTPS access)</div>
+    </div>
+    
+    <div class="system-box">
+      <div style="color: #b5d4f4; margin-bottom: 20px; font-weight: bold;">MPS-Connect<br>(Edge Storage Node · Docker Compose)</div>
+      <div class="core">[ MPS-Connect Platform ]</div>
+    </div>
+
+    <div class="external-group">
+      <div class="box ai">🤖 Ollama<br>(Edge Compute Node<br>[VPN_IP_REDACTED] · Encrypted Mesh VPN)</div>
+      <div class="box ai">🎤 Wyoming Bridge<br>(STT: Whisper · TTS: Piper<br>wyoming-bridge:10500)</div>
+      <div class="box service">🏛️ gather.gov.sg<br>(SLA tracking portal)</div>
+      <div class="box service">🏢 Singapore Agencies<br>(HDB · MSF · MOM · CPF<br> MOH · ICA · NEA · SPF…)</div>
+      <div class="box user">🔐 NDI / SingPass<br>(⏸️ Dormant — FAPI v3<br>code in server.js)<br>Demo auth active</div>
+    </div>
+  </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script>
+    function downloadPNG() {
+      html2canvas(document.querySelector("#chart-container")).then(canvas => {
+        let link = document.createElement('a');
+        link.download = 'context.png';
+        link.href = canvas.toDataURL();
+        link.click();
+      });
+    }
+  </script>
+</body>
+</html>

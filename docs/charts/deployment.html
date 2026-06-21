@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Deployment Diagram — MPS-Connect</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #0d1117; color: #c9d1d9; margin: 0; padding: 20px; }
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    button { background: #238636; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; }
+    button:hover { background: #2ea043; }
+    #chart-container { background: #161b22; padding: 40px; border-radius: 8px; border: 1px solid #30363d; display: flex; flex-direction: column; gap: 30px; }
+    .box { padding: 15px; border-radius: 6px; text-align: center; font-size: 14px; white-space: pre-wrap; display: flex; align-items: center; justify-content: center; flex-direction: column; }
+    .internet { background: rgba(26,10,10,0.5); border: 1px solid #f0997b; padding: 20px; border-radius: 12px; display: flex; gap: 20px; justify-content: center; }
+    .meshvpn { background: rgba(10,26,10,0.5); border: 2px solid #5dcaa5; padding: 30px; border-radius: 12px; display: flex; gap: 30px; }
+    .edgenode { background: rgba(12,26,46,0.5); border: 2px solid #85b7eb; padding: 20px; border-radius: 12px; flex: 2; }
+    .edgecompute { background: rgba(26,26,62,0.5); border: 2px solid #afa9ec; padding: 20px; border-radius: 12px; flex: 1; }
+    .docker { background: rgba(12,12,30,0.5); border: 1px solid #888; padding: 20px; border-radius: 8px; margin-top: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+    
+    .user { background: #085041; border: 1px solid #5dcaa5; color: #9fe1cb; }
+    .cf { background: #712b13; border: 1px solid #f0997b; color: #f0997b; }
+    .app { background: #3c3489; border: 2px solid #afa9ec; color: #cecbf6; }
+    .db { background: #085041; border: 2px solid #5dcaa5; color: #9fe1cb; }
+    .sec { background: #3c1010; border: 2px solid #f0997b; color: #f0997b; }
+    .service { background: #444441; border: 1px solid #b4b2a9; color: #d3d1c7; }
+    .redis { background: #085041; border: 1px dashed #5dcaa5; color: #5dcaa5; }
+    
+    .zone-title { font-weight: bold; margin-bottom: 15px; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Deployment Diagram — MPS-Connect</h1>
+    <button onclick="downloadPNG()">Download as PNG</button>
+  </div>
+  <div id="chart-container">
+    <div class="internet">
+      <div class="zone-title" style="color:#f5c4b3; position:absolute; transform:translateY(-10px);">🌐 Public Internet</div>
+      <div class="box user">👤 Resident / Staff<br>(browser)</div>
+      <div class="box cf">☁️ Cloudflare Edge<br>(TLS termination<br>DDoS protection)</div>
+      <div class="box cf">🔗 Cloudflare Tunnel<br>(outbound only)</div>
+    </div>
+    
+    <div class="meshvpn">
+      <div class="zone-title" style="color:#9fe1cb; width:100%; position:absolute; text-align:left; transform:translateY(-15px);">🔒 Encrypted Mesh VPN Overlay</div>
+      <div style="width:100%; display:flex; gap: 30px;">
+        <div class="edgenode">
+          <div class="zone-title" style="color:#b5d4f4;">📦 Edge Storage Node<br>Singapore data residency</div>
+          <div class="box service" style="margin: 0 auto; width: 200px;">master-nginx<br>:80 / :443</div>
+          <div class="docker">
+            <div class="box app">mps-connect<br>Next.js 15<br>:3080</div>
+            <div class="box app">mps-ai-proxy<br>Express<br>:3103</div>
+            <div class="box db">mps-postgres<br>:5432<br>📍 data stays on Edge Storage Node</div>
+            <div class="box sec">mps-clamav<br>ClamAV<br>:3310</div>
+            <div class="box redis">mps-redis<br>:6379</div>
+            <div class="box service">mps-migrate</div>
+          </div>
+        </div>
+        
+        <div class="edgecompute">
+          <div class="zone-title" style="color:#cecbf6;">🖥️ Edge Compute Node<br>[VPN_IP_REDACTED]</div>
+          <div class="box app" style="color:#afa9ec;">Ollama :11434<br>Active models:<br>· gemma4:e2b (primary agent)<br>· gemma4:12b-mlx<br>· qwen3.6:27b<br><br>📍 weights local<br>no data leaves Encrypted Mesh VPN</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script>
+    function downloadPNG() {
+      html2canvas(document.querySelector("#chart-container")).then(canvas => {
+        let link = document.createElement('a');
+        link.download = 'deployment.png';
+        link.href = canvas.toDataURL();
+        link.click();
+      });
+    }
+  </script>
+</body>
+</html>
