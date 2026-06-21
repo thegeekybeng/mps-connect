@@ -1,4 +1,6 @@
 'use strict';
+require('./tracing'); // Initialize OpenTelemetry before any other requires
+
 // =============================================================
 // MPS Connect — Server-Side AI Proxy
 // OWASP LLM01/06/08 defence: system prompt, PII masking, canary
@@ -11,6 +13,7 @@ const crypto       = require('crypto');
 const cookieParser = require('cookie-parser');
 const multer       = require('multer');
 const FormData     = require('form-data');
+const { z }        = require('zod');
 const http         = require('http');
 const { initDB, pool } = require('./db');
 const { causalityQueue } = require('./queue');
@@ -25,16 +28,34 @@ app.use(express.json({ limit: '512kb' }));
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 
+// ── Config Validation (Fail-fast Deployability) ──────────────
+const envSchema = z.object({
+  OLLAMA_ENDPOINT: z.string().url().default('http://localhost:11434/api/chat'),
+  OLLAMA_GENERATE: z.string().url().default('http://localhost:11434/api/generate'),
+  AI_MODEL: z.string().min(1).default('gemma4:e4b'),
+  PORT: z.string().regex(/^\d+$/).default('3100'),
+  WYOMING_BRIDGE: z.string().url().default('http://wyoming-bridge:10500'),
+  AI_KILL_SWITCH: z.string().optional().default('false'),
+  APP_URL: z.string().url().optional(),
+});
+
+let env;
+try {
+  env = envSchema.parse(process.env);
+} catch (error) {
+  console.error('❌ Invalid environment variables:', error.format());
+  process.exit(1);
+}
+
 // ── Config (server-side only — never sent to browser) ────────
-const OLLAMA_ENDPOINT = process.env.OLLAMA_ENDPOINT || 'http://localhost:11434/api/chat';
-const OLLAMA_GENERATE = process.env.OLLAMA_GENERATE || 'http://localhost:11434/api/generate';
-const AI_MODEL        = process.env.AI_MODEL        || 'gemma4:e4b';
-const PORT            = parseInt(process.env.PORT   || '3100', 10);
-const WYOMING_BRIDGE  = process.env.WYOMING_BRIDGE  || 'http://wyoming-bridge:10500';
+const OLLAMA_ENDPOINT = env.OLLAMA_ENDPOINT;
+const OLLAMA_GENERATE = env.OLLAMA_GENERATE;
+const AI_MODEL        = env.AI_MODEL;
+const PORT            = parseInt(env.PORT, 10);
+const WYOMING_BRIDGE  = env.WYOMING_BRIDGE;
 
 // IMDA Agentic AI Framework Dim.1 — Emergency AI kill switch
-// Set AI_KILL_SWITCH=true to disable all AI endpoints without full service outage
-const AI_KILL_SWITCH  = (process.env.AI_KILL_SWITCH || 'false').toLowerCase() === 'true';
+const AI_KILL_SWITCH  = env.AI_KILL_SWITCH.toLowerCase() === 'true';
 if (AI_KILL_SWITCH) {
   console.warn('[KILL SWITCH] AI endpoints are DISABLED. Set AI_KILL_SWITCH=false and restart to re-enable.');
 }
@@ -44,7 +65,7 @@ const ALLOWED_ORIGINS = [
   'http://127.0.0.1',
   'http://localhost',
   'http://mps-connect',
-  process.env.APP_URL,
+  env.APP_URL,
 ].filter(Boolean);
 
 // ── PII masking (Singapore-specific) ─────────────────────────
