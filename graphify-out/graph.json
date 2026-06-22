@@ -4629,13 +4629,17 @@
       "norm_label": "mp role"
     },
     {
-      "label": "Sovereign Infrastructure (Local NAS)",
+      "label": "Sovereign Infrastructure (Edge Storage Node)",
       "file_type": "rationale",
       "source_file": "README.md",
       "source_location": null,
       "id": "sovereign_infrastructure",
-      "community": 29,
-      "norm_label": "sovereign infrastructure (local nas)"
+      "size": 5.0,
+      "color": "#7B1FA2",
+      "degree": 3,
+      "betweenness": 0.0,
+      "community": 11,
+      "norm_label": "sovereign infrastructure (edge storage node)"
     },
     {
       "label": "Ollama Local Inference",

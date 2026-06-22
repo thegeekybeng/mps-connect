@@ -194,7 +194,7 @@ Nodes (4): assembleLetter(), buildCrossRef(), getAgencyTmpl(), selectFacts()
 
 ### Community 29 - "Inference Architecture"
 Cohesion: 0.50
-Nodes (4): Gemma Model (gemma3n:e2b), Local Inference Rationale, Ollama Local Inference, Sovereign Infrastructure (Local NAS)
+Nodes (4): Gemma Model (gemma3n:e2b), Local Inference Rationale, Ollama Local Inference, Sovereign Infrastructure (Edge Storage Node)
 
 ### Community 33 - "Constituency Routing"
 Cohesion: 0.67

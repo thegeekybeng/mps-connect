@@ -161,7 +161,7 @@ export default async function LandingPage() {
             connected to any Singapore Government ministry or statutory board.
           </p>
           <p className="text-xs" style={{ color: 'var(--gov-text-muted)' }}>
-            Built by TheGeekyBeng · © {new Date().getFullYear()}
+            Built by the MPS Connect Team · © {new Date().getFullYear()}
           </p>
         </div>
       </footer>

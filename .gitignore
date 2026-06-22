@@ -58,3 +58,10 @@ HANDOFF.md
 # Python virtual environments
 .venv/
 .venv-*/
+
+# Datasets and ML Models
+*.csv
+*.parquet
+*.pkl
+*.pt
+

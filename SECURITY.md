@@ -13,8 +13,8 @@
 
 If you discover a security vulnerability in MPS-Connect, please report it responsibly:
 
-1. **GitHub Private Vulnerability Reporting:** Use the [Security Advisories](https://github.com/thegeekybeng/mps-connect/security/advisories/new) feature to submit a private report
-2. **Email:** Contact the maintainer directly via the channels listed on [@thegeekybeng](https://github.com/thegeekybeng)
+1. **GitHub Private Vulnerability Reporting:** Use the [Security Advisories](https://github.com/mps-connect/mps-connect/security/advisories/new) feature to submit a private report
+2. **Email:** Contact the maintainer directly.
 
 ### What to Include
 

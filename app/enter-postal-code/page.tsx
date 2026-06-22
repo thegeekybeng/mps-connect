@@ -285,7 +285,7 @@ export default function EnterPostalCodePage() {
 
           {/* Footer */}
           <p className="text-center mt-6 text-xs" style={{ color: 'var(--gov-text-muted)' }}>
-            MPS Connect Demo · Built by TheGeekyBeng
+            MPS Connect Demo · Built by the MPS Connect Team
           </p>
         </div>
       </div>

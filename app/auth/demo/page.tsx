@@ -342,7 +342,7 @@ function DemoAuthContent() {
       {/* Footer */}
       <footer className="py-4 px-6 text-center" style={{ borderTop: '1px solid var(--gov-border)', background: 'var(--gov-surface)' }}>
         <p className="text-xs" style={{ color: 'var(--gov-text-muted)' }}>
-          MPS Connect Demo · Built by TheGeekyBeng · Not affiliated with any government body
+          MPS Connect Demo · Built by the MPS Connect Team · Not affiliated with any government body
         </p>
       </footer>
     </div>

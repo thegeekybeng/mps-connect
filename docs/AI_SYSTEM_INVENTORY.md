@@ -4,7 +4,7 @@
 
 ## System Owner
 
-- **Named Accountable Person:** Andrew Yeo (TheGeekyBeng)
+- **Named Accountable Person:** System Administrator
 - **Role:** System Developer & Operator
 - **Contact:** Via github
 

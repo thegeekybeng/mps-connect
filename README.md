@@ -360,4 +360,4 @@ Planned development is documented in [`ROADMAP.md`](./ROADMAP.md). **Phase 1 is 
 
 ---
 
-Built by [@thegeekybeng](https://github.com/thegeekybeng)
+Built by the maintainers
