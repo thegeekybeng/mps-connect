@@ -5,8 +5,11 @@ services:
     container_name: mps-migrate
     environment:
       - PGPASSWORD=${POSTGRES_PASSWORD:-}
+      - POSTGRES_HOST=${POSTGRES_HOST:-mps-postgres}
+      - POSTGRES_USER=${POSTGRES_USER:-mps}
+      - POSTGRES_DB=${POSTGRES_DB:-mps_connect}
     command: >
-      sh -c "psql -h mps-postgres -U mps -d mps_connect -f /migrations/init.sql && echo 'Schema + Migration OK'"
+      sh -c "psql -h $${POSTGRES_HOST} -U $${POSTGRES_USER} -d $${POSTGRES_DB} -f /migrations/init.sql && echo 'Schema + Migration OK'"
     volumes:
       - ./db:/migrations:ro
     networks:
@@ -26,10 +29,10 @@ services:
       # Auth — MUST be changed in production (min 32 random chars)
       - JWT_SECRET=${JWT_SECRET:-change-this-in-production-must-be-32-chars-min}
       # Database
-      - POSTGRES_HOST=mps-postgres
-      - POSTGRES_PORT=5432
-      - POSTGRES_DB=mps_connect
-      - POSTGRES_USER=mps
+      - POSTGRES_HOST=${POSTGRES_HOST:-mps-postgres}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_DB=${POSTGRES_DB:-mps_connect}
+      - POSTGRES_USER=${POSTGRES_USER:-mps}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-}
       # Redis (queue pub/sub + session)
       - REDIS_URL=redis://mps-redis:6379
@@ -88,10 +91,15 @@ services:
       # - SINGPASS_REDIRECT_URI=${SINGPASS_REDIRECT_URI:-https://your-domain.com/auth/singpass/callback}
       - SESSION_SECRET=${SESSION_SECRET:-change-in-production}
       - NODE_ENV=${NODE_ENV:-production}
-      # IMDA Agentic AI Framework Dim.1 — Kill switch. Set to 'true' to disable all AI endpoints.
       - AI_KILL_SWITCH=${AI_KILL_SWITCH:-false}
       # SQLite audit DB path (volume-mounted)
       - AUDIT_DB_PATH=/data/audit.db
+      # Database connection
+      - POSTGRES_HOST=${POSTGRES_HOST:-mps-postgres}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_DB=${POSTGRES_DB:-mps_connect}
+      - POSTGRES_USER=${POSTGRES_USER:-mps}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-}
     ports:
       - "3103:3103"   # Exposed for nginx /auth/ proxy — SingPass OIDC endpoints
     healthcheck:
