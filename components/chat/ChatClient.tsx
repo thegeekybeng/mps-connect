@@ -6,6 +6,7 @@ import { Send, Bot, User, AlertTriangle, Loader2, CheckCircle2, ArrowLeft, Shiel
 import VoiceRecorder from '@/components/chat/VoiceRecorder';
 import AudioPlayback from '@/components/chat/AudioPlayback';
 import ChatMarkdown from '@/components/chat/ChatMarkdown';
+import Link from 'next/link';
 
 const LANG_LABELS: Record<string, { flag: string; name: string }> = {
   en: { flag: '🇬🇧', name: 'English' },
@@ -63,10 +64,10 @@ export default function ChatClient({ mpName, constituency, division, constituenc
   // Show submit CTA after 3+ user messages
   useEffect(() => {
     const userMsgCount = messages.filter(m => m.role === 'user').length;
-    if (userMsgCount >= 3 && !submitted) {
-      setShowSubmit(true);
+    if (userMsgCount >= 3 && !submitted && !showSubmit) {
+      setTimeout(() => setShowSubmit(true), 0);
     }
-  }, [messages, submitted]);
+  }, [messages, submitted, showSubmit]);
 
   const handleSend = useCallback(() => {
     const trimmed = input.trim();
@@ -213,9 +214,9 @@ export default function ChatClient({ mpName, constituency, division, constituenc
       <header className="shrink-0 px-4 py-3 sm:px-6" style={{ background: 'var(--gov-surface)', borderBottom: '1px solid var(--gov-border)' }}>
         <div className="max-w-2xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <a href="/" className="w-9 h-9 rounded-lg flex items-center justify-center transition-colors hover:bg-slate-100" style={{ border: '1px solid var(--gov-border)' }} aria-label="Back to home">
+            <Link href="/" className="w-9 h-9 rounded-lg flex items-center justify-center transition-colors hover:bg-slate-100" style={{ border: '1px solid var(--gov-border)' }} aria-label="Back to home">
               <ArrowLeft size={16} style={{ color: 'var(--gov-text-muted)' }} />
-            </a>
+            </Link>
             <div>
               <h1 className="text-sm font-bold leading-tight" style={{ color: 'var(--gov-text)' }}>Chat with {mpName}&apos;s Office</h1>
               <p className="text-xs" style={{ color: 'var(--gov-text-muted)' }}>{constituency}{division ? ` · ${division}` : ''}</p>

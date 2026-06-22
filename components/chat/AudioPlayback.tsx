@@ -19,6 +19,20 @@ export default function AudioPlayback({ text, sessionId, messageId }: Props) {
   const [error, setError] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
+  const playAudio = useCallback((url: string) => {
+    if (!audioRef.current) {
+      audioRef.current = new Audio();
+      audioRef.current.onended = () => setIsPlaying(false);
+      audioRef.current.onerror = () => {
+        setIsPlaying(false);
+        setError(true);
+      };
+    }
+    audioRef.current.src = url;
+    audioRef.current.play();
+    setIsPlaying(true);
+  }, []);
+
   const handlePlay = useCallback(async () => {
     setError(false);
 
@@ -63,21 +77,7 @@ export default function AudioPlayback({ text, sessionId, messageId }: Props) {
       setError(true);
       setIsLoading(false);
     }
-  }, [text, sessionId, messageId, isPlaying]);
-
-  const playAudio = (url: string) => {
-    if (!audioRef.current) {
-      audioRef.current = new Audio();
-      audioRef.current.onended = () => setIsPlaying(false);
-      audioRef.current.onerror = () => {
-        setIsPlaying(false);
-        setError(true);
-      };
-    }
-    audioRef.current.src = url;
-    audioRef.current.play();
-    setIsPlaying(true);
-  };
+  }, [text, sessionId, messageId, isPlaying, playAudio]);
 
   if (error) {
     return (

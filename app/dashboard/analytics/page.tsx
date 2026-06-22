@@ -285,7 +285,6 @@ function UrgencyDonut({ data }: { data: UrgencyBucket[] }) {
   const total = data.reduce((s, d) => s + d.count, 0);
   const r = 60, cx = 80, cy = 80, stroke = 28;
   const circumference = 2 * Math.PI * r;
-  let offset = 0;
 
   return (
     <div className="flex items-center gap-8">
@@ -294,7 +293,9 @@ function UrgencyDonut({ data }: { data: UrgencyBucket[] }) {
         {data.map((d, i) => {
           const pct  = d.count / total;
           const dash = pct * circumference;
-          const el = (
+          const currentOffset = data.slice(0, i).reduce((sum, prev) => sum + (prev.count / total) * circumference, 0);
+          
+          return (
             <circle
               key={i}
               cx={cx} cy={cy} r={r}
@@ -302,13 +303,11 @@ function UrgencyDonut({ data }: { data: UrgencyBucket[] }) {
               stroke={COLORS[d.urgency] ?? '#94a3b8'}
               strokeWidth={stroke}
               strokeDasharray={`${dash} ${circumference}`}
-              strokeDashoffset={-offset}
+              strokeDashoffset={-currentOffset}
               transform={`rotate(-90 ${cx} ${cy})`}
               strokeLinecap="round"
             />
           );
-          offset += dash;
-          return el;
         })}
         <text x={cx} y={cy - 6} textAnchor="middle" fontSize={22} fontWeight="800" fill="var(--gov-text)">{total}</text>
         <text x={cx} y={cy + 12} textAnchor="middle" fontSize={10} fill="var(--gov-text-muted)">total</text>

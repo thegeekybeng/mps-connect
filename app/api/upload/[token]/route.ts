@@ -36,7 +36,6 @@ const CLAMAV_PORT = parseInt(process.env.CLAMAV_PORT ?? '3310', 10);
 
 async function scanWithClamAV(buffer: Buffer): Promise<{ clean: boolean; detail: string }> {
   return new Promise((resolve) => {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const net = require('net');
     const socket = new net.Socket();
     const chunks: Buffer[] = [];

@@ -99,7 +99,7 @@ export default function PrivacyConsentGate({ onConsent, mpName, constituency }: 
               </div>
               <div>
                 <strong style={{ color: 'var(--gov-text)' }}>How we use it:</strong>
-                <p>Your information is used solely to categorise your case, identify the relevant government agency, and draft a formal letter from your MP's office. AI processes your case description to assist staff — all AI outputs are reviewed by a human officer before any action is taken.</p>
+                <p>Your information is used solely to categorise your case, identify the relevant government agency, and draft a formal letter from your MP&apos;s office. AI processes your case description to assist staff — all AI outputs are reviewed by a human officer before any action is taken.</p>
               </div>
               <div>
                 <strong style={{ color: 'var(--gov-text)' }}>Who processes it:</strong>

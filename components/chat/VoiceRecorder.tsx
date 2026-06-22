@@ -52,6 +52,16 @@ export default function VoiceRecorder({ sessionId, onTranscription, disabled }: 
     return `${mins}:${String(secs).padStart(2, '0')}`;
   };
 
+  const stopRecording = useCallback(() => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    if (mediaRecorderRef.current?.state === 'recording') {
+      mediaRecorderRef.current.stop();
+    }
+  }, []);
+
   const startRecording = useCallback(async () => {
     setError(null);
     setDetectedLang(null);
@@ -118,17 +128,7 @@ export default function VoiceRecorder({ sessionId, onTranscription, disabled }: 
         setError('Unable to access microphone.');
       }
     }
-  }, [audioUrl]);
-
-  const stopRecording = useCallback(() => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-    if (mediaRecorderRef.current?.state === 'recording') {
-      mediaRecorderRef.current.stop();
-    }
-  }, []);
+  }, [audioUrl, stopRecording]);
 
   const cancelRecording = useCallback(() => {
     if (audioUrl) URL.revokeObjectURL(audioUrl);
