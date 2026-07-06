@@ -117,8 +117,8 @@ MP approves final decision (mp/superadmin role)
 Letter sent to agency
 ```
 
-- **Agent Developer:** Andrew Yeo
-- **System Operator:** Andrew Yeo
+- **Agent Developer:** System Administrator
+- **System Operator:** System Administrator
 - **Decision Reviewer:** Staff user (writer/admin — `accountable_officer_id`)
 - **Final Authority:** MP (`approved_by` in `letters` table)
 - **Accountability Principle:** The AI cannot make final decisions. A human officer is always in the chain.

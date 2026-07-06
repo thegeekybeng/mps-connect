@@ -14,7 +14,7 @@ This plan covers all personal data processed by MPS Connect:
 
 | Field | Value |
 |-------|-------|
-| **Name** | Andrew Yeo |
+| **Name** | System Administrator |
 | **Role** | System Developer & Operator |
 | **Contact** | Via constituency office |
 

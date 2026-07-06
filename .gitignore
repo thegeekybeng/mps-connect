@@ -52,6 +52,10 @@ docs/session-history/
 # Antigravity / Gemini working directories
 .antigravityignore
 
+# Agent configuration and knowledge graph cache — internal, not for public repos
+.agents/
+graphify-out/
+
 # Session handoff — internal developer resume doc, not for public repos
 HANDOFF.md
 

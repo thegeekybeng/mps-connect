@@ -49,7 +49,7 @@ During a live MPS, the case writer sits with the resident and captures their con
 
 ## Architecture
 
-MPS-Connect runs on sovereign infrastructure — a local NAS in Singapore — with AI inference on a dedicated inference server connected via encrypted VPN. No resident data leaves the local network.
+MPS-Connect runs on sovereign infrastructure — a local edge server in Singapore — with AI inference on a dedicated compute node connected via encrypted mesh VPN. No resident data leaves the local network.
 
 ### System Context
 

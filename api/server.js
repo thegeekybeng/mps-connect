@@ -543,7 +543,7 @@ app.post('/api/ai/explain', async (req, res) => {
 // POST /api/staff/login, GET /api/staff/cases, and verifyStaff
 // middleware were removed. Staff auth is now handled entirely
 // by the Next.js app via lib/auth.ts (JWT + bcrypt + RBAC).
-// Removal date: 2026-06-12. See HANDOFF.md §6.6.
+// Removal date: 2026-06-12. Auth moved to Next.js lib/auth.ts (ADR-008).
 
 // ── Causality Engine — inline helpers ────────────────────────
 // Ported from CWI: constants/causalityDomains.ts + agencyTemplates.ts + letterGenerator.ts
