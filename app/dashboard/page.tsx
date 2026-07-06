@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { requireAuth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import Link from 'next/link';
+import { CaseTableRow } from '@/components/CaseTableRow';
 import {
   AlertTriangle, Clock, CheckCircle2, FolderOpen,
   Users, TrendingUp, ChevronRight, Info,
@@ -186,45 +187,39 @@ export default async function DashboardPage() {
             </thead>
             <tbody>
               {recent.map((c, i) => (
-                <Link key={c.id} href={`/dashboard/cases/${c.id}`} legacyBehavior>
-                  <tr
-                    className="cursor-pointer transition-colors group"
-                    style={{ background: i % 2 === 1 ? 'var(--gov-surface-alt)' : 'var(--gov-surface)', borderBottom: '1px solid var(--gov-border)' }}
-                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--gov-primary-50)')}
-                    onMouseLeave={e => (e.currentTarget.style.background = i % 2 === 1 ? 'var(--gov-surface-alt)' : 'var(--gov-surface)')}
-                  >
-                    <td className="px-6 py-3.5">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
-                          style={{ background: 'var(--gov-primary-50)', color: 'var(--gov-primary)' }}>
-                          {initials(c.resident_name)}
-                        </div>
-                        <span className="font-medium transition-colors" style={{ color: 'var(--gov-text)' }}>
-                          {c.resident_name}
-                        </span>
+                <CaseTableRow key={c.id} href={`/dashboard/cases/${c.id}`} even={i % 2 === 0}>
+                  <td className="px-6 py-3.5">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+                        style={{ background: 'var(--gov-primary-50)', color: 'var(--gov-primary)' }}>
+                        {initials(c.resident_name)}
                       </div>
-                    </td>
-                    <td className="px-4 py-3.5" style={{ color: 'var(--gov-text-secondary)' }}>{c.category ?? '—'}</td>
-                    <td className="px-4 py-3.5">
-                      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-bold ${URGENCY_CLASS[c.urgency] ?? ''}`}>
-                        {c.urgency === 'Critical' && <span className="w-1.5 h-1.5 rounded-full bg-current" />}
-                        {c.urgency}
+                      <span className="font-medium" style={{ color: 'var(--gov-text)' }}>
+                        {c.resident_name}
                       </span>
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <span className={`px-2.5 py-1 rounded text-xs font-medium ${STATUS_CLASS[c.status] ?? ''}`}>
-                        {c.status.replace('_', ' ')}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3.5 text-right text-xs tabular-nums" style={{ color: 'var(--gov-text-muted)' }}>
-                      {relDate(c.created_at)}
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <ChevronRight size={14} style={{ color: 'var(--gov-text-muted)' }} className="group-hover:translate-x-0.5 transition-transform" />
-                    </td>
-                  </tr>
-                </Link>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3.5" style={{ color: 'var(--gov-text-secondary)' }}>{c.category ?? '—'}</td>
+                  <td className="px-4 py-3.5">
+                    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-bold ${URGENCY_CLASS[c.urgency] ?? ''}`}>
+                      {c.urgency === 'Critical' && <span className="w-1.5 h-1.5 rounded-full bg-current" />}
+                      {c.urgency}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3.5">
+                    <span className={`px-2.5 py-1 rounded text-xs font-medium ${STATUS_CLASS[c.status] ?? ''}`}>
+                      {c.status.replace('_', ' ')}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3.5 text-right text-xs tabular-nums" style={{ color: 'var(--gov-text-muted)' }}>
+                    {relDate(c.created_at)}
+                  </td>
+                  <td className="px-4 py-3.5">
+                    <ChevronRight size={14} style={{ color: 'var(--gov-text-muted)' }} className="group-hover:translate-x-0.5 transition-transform" />
+                  </td>
+                </CaseTableRow>
               ))}
+
             </tbody>
           </table>
         )}

@@ -102,9 +102,10 @@ export async function createCaseWithAnalysis(
 
   // Extract category from causal graph domains
   const agencyRoutes = (causalGraph.agencyRoutes as Array<{ agency: string; priority: string }>) ?? [];
-  const category = deriveCategory(agencyRoutes);
-  const summary = (causalGraph.summary as string) ?? transcript.slice(0, 500);
-  const coreRequest = (causalGraph.coreRequest as string) ?? null;
+  const rawCategory = deriveCategory(agencyRoutes);
+  const category = rawCategory ? rawCategory.slice(0, 100) : null;  // VARCHAR(100) guard
+  const summary = ((causalGraph.summary as string) ?? transcript.slice(0, 500)).slice(0, 2000);
+  const coreRequest = ((causalGraph.coreRequest as string) ?? null)?.slice(0, 500) ?? null;
 
   // ── Step 4: Insert case ────────────────────────────────────────
   const rows = await db<{ id: number }>(
@@ -148,7 +149,7 @@ export async function createCaseWithAnalysis(
          (case_id, agency, document_type, reason, related_node_ids, required, source_type, source_institution)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
       [
-        newCaseId, req.agency, req.documentType, req.reason ?? '',
+        newCaseId, req.agency.slice(0, 100), req.documentType, req.reason ?? '',
         req.relatedNodeIds ?? [], req.required ?? true,
         req.sourceType === 'government_request' ? 'government_request' : 'resident',
         req.sourceInstitution ?? null,
@@ -163,7 +164,7 @@ export async function createCaseWithAnalysis(
     await dbOne(
       `INSERT INTO letters (case_id, agency, agency_label, content, status, generated_by)
        VALUES ($1,$2,$3,$4,'draft',$5)`,
-      [newCaseId, letter.agency, letter.agencyLabel ?? null, letter.content, session.userId]
+      [newCaseId, letter.agency.slice(0, 100), letter.agencyLabel?.slice(0, 100) ?? null, letter.content, session.userId]
     );
     lettersCreated++;
   }

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { requireAuth } from '@/lib/auth';
 import { can } from '@/lib/rbac';
 import { db } from '@/lib/db';
+import { CaseTableRow } from '@/components/CaseTableRow';
 import {
   FolderOpen, ChevronRight,
   Search, X, Plus,
@@ -285,72 +286,63 @@ export default async function CasesPage({
             </thead>
             <tbody>
               {cases.map((c, i) => (
-                <Link key={c.id} href={`/dashboard/cases/${c.id}`} legacyBehavior>
-                  <tr
-                    className="cursor-pointer transition-colors group"
-                    style={{
-                      background: i % 2 === 1 ? 'var(--gov-surface-alt)' : 'var(--gov-surface)',
-                      borderBottom: '1px solid var(--gov-border)',
-                    }}
-                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--gov-primary-50)')}
-                    onMouseLeave={e => (e.currentTarget.style.background = i % 2 === 1 ? 'var(--gov-surface-alt)' : 'var(--gov-surface)')}
-                  >
-                    {/* Resident */}
-                    <td className="px-5 py-3.5">
-                      <p className="font-semibold text-sm" style={{ color: 'var(--gov-text)' }}>{c.resident_name}</p>
-                      <p className="text-xs mt-0.5" style={{ color: 'var(--gov-text-muted)' }}>
-                        {c.case_number ?? `#${c.id}`} · {timeAgo(c.created_at)}
-                      </p>
-                    </td>
+                <CaseTableRow key={c.id} href={`/dashboard/cases/${c.id}`} even={i % 2 === 0}>
+                  {/* Resident */}
+                  <td className="px-5 py-3.5">
+                    <p className="font-semibold text-sm" style={{ color: 'var(--gov-text)' }}>{c.resident_name}</p>
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--gov-text-muted)' }}>
+                      {c.case_number ?? `#${c.id}`} · {timeAgo(c.created_at)}
+                    </p>
+                  </td>
 
-                    {/* Category */}
-                    <td className="px-4 py-3.5">
-                      <p className="text-sm truncate" style={{ color: 'var(--gov-text-secondary)' }}>{c.category ?? '—'}</p>
-                      {c.sub_category && (
-                        <p className="text-xs truncate" style={{ color: 'var(--gov-text-muted)' }}>{c.sub_category}</p>
-                      )}
-                    </td>
+                  {/* Category */}
+                  <td className="px-4 py-3.5">
+                    <p className="text-sm truncate" style={{ color: 'var(--gov-text-secondary)' }}>{c.category ?? '—'}</p>
+                    {c.sub_category && (
+                      <p className="text-xs truncate" style={{ color: 'var(--gov-text-muted)' }}>{c.sub_category}</p>
+                    )}
+                  </td>
 
-                    {/* Urgency */}
-                    <td className="px-4 py-3.5">
-                      <span className={`inline-block px-2.5 py-1 rounded text-xs font-bold ${URGENCY_CLASS[c.urgency] ?? ''}`}>
-                        {c.urgency}
-                      </span>
-                    </td>
+                  {/* Urgency */}
+                  <td className="px-4 py-3.5">
+                    <span className={`inline-block px-2.5 py-1 rounded text-xs font-bold ${URGENCY_CLASS[c.urgency] ?? ''}`}>
+                      {c.urgency}
+                    </span>
+                  </td>
 
-                    {/* Status */}
-                    <td className="px-4 py-3.5">
-                      <span className={`inline-block px-2.5 py-1 rounded text-xs font-semibold ${STATUS_CLASS[c.status] ?? ''}`}>
-                        {c.status.replace('_', ' ')}
-                      </span>
-                    </td>
+                  {/* Status */}
+                  <td className="px-4 py-3.5">
+                    <span className={`inline-block px-2.5 py-1 rounded text-xs font-semibold ${STATUS_CLASS[c.status] ?? ''}`}>
+                      {c.status.replace('_', ' ')}
+                    </span>
+                  </td>
 
-                    {/* Documents */}
-                    <td className="px-4 py-3.5">
-                      {c.doc_total > 0 ? (
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--gov-surface-inset)' }}>
-                            <div
-                              className="h-full rounded-full"
-                              style={{ width: `${(c.doc_fulfilled / c.doc_total) * 100}%`, background: '#059669' }}
-                            />
-                          </div>
-                          <span className="text-xs shrink-0 tabular-nums" style={{ color: 'var(--gov-text-muted)' }}>
-                            {c.doc_fulfilled}/{c.doc_total}
-                          </span>
+                  {/* Documents */}
+                  <td className="px-4 py-3.5">
+                    {c.doc_total > 0 ? (
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--gov-surface-inset)' }}>
+                          <div
+                            className="h-full rounded-full"
+                            style={{ width: `${(c.doc_fulfilled / c.doc_total) * 100}%`, background: '#059669' }}
+                          />
                         </div>
-                      ) : (
-                        <span className="text-xs" style={{ color: 'var(--gov-text-muted)' }}>—</span>
-                      )}
-                    </td>
+                        <span className="text-xs shrink-0 tabular-nums" style={{ color: 'var(--gov-text-muted)' }}>
+                          {c.doc_fulfilled}/{c.doc_total}
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="text-xs" style={{ color: 'var(--gov-text-muted)' }}>—</span>
+                    )}
+                  </td>
 
-                    {/* Arrow */}
-                    <td className="px-4 py-3.5">
-                      <ChevronRight size={16} style={{ color: 'var(--gov-text-muted)' }} className="group-hover:translate-x-0.5 transition-transform" />
-                    </td>
-                  </tr>
-                </Link>
+                  {/* Arrow */}
+                  <td className="px-4 py-3.5">
+                    <ChevronRight size={16} style={{ color: 'var(--gov-text-muted)' }} className="group-hover:translate-x-0.5 transition-transform" />
+                  </td>
+                </CaseTableRow>
               ))}
+
             </tbody>
           </table>
         )}

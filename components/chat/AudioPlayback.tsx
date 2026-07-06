@@ -19,7 +19,7 @@ export default function AudioPlayback({ text, sessionId, messageId }: Props) {
   const [error, setError] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const playAudio = useCallback((url: string) => {
+  const playAudio = useCallback(async (url: string) => {
     if (!audioRef.current) {
       audioRef.current = new Audio();
       audioRef.current.onended = () => setIsPlaying(false);
@@ -29,8 +29,13 @@ export default function AudioPlayback({ text, sessionId, messageId }: Props) {
       };
     }
     audioRef.current.src = url;
-    audioRef.current.play();
-    setIsPlaying(true);
+    try {
+      await audioRef.current.play();
+      setIsPlaying(true);
+    } catch (e) {
+      setIsPlaying(false);
+      setError(true);
+    }
   }, []);
 
   const handlePlay = useCallback(async () => {
@@ -46,7 +51,7 @@ export default function AudioPlayback({ text, sessionId, messageId }: Props) {
     // Check cache first
     const cachedUrl = audioCache.get(messageId);
     if (cachedUrl) {
-      playAudio(cachedUrl);
+      await playAudio(cachedUrl);
       return;
     }
 
@@ -55,9 +60,7 @@ export default function AudioPlayback({ text, sessionId, messageId }: Props) {
     try {
       const result = await synthesizeSpeech(text, sessionId);
       if (result.error || !result.audioBase64) {
-        setError(true);
-        setIsLoading(false);
-        return;
+        throw new Error('Synthesis failed');
       }
 
       // Convert base64 to blob URL
@@ -71,8 +74,7 @@ export default function AudioPlayback({ text, sessionId, messageId }: Props) {
       audioCache.set(messageId, url);
 
       setIsLoading(false);
-      playAudio(url);
-
+      await playAudio(url);
     } catch {
       setError(true);
       setIsLoading(false);
@@ -83,7 +85,10 @@ export default function AudioPlayback({ text, sessionId, messageId }: Props) {
     return (
       <button
         type="button"
-        onClick={() => setError(false)}
+        onClick={() => {
+          setError(false);
+          handlePlay();
+        }}
         className="inline-flex items-center gap-1 text-[10px] text-red-400 hover:text-red-500 transition-colors mt-1"
         title="Audio unavailable — tap to retry"
       >
