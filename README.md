@@ -96,7 +96,7 @@ Full detail — ERD, trust boundaries, deployment topology, auth flow, and all A
 | Frontend | Next.js 16 (App Router) + TypeScript |
 | Database | PostgreSQL 15 with row-level audit trail |
 | AI proxy | Node.js + Express (server-side, internal only) |
-| AI inference | Ollama — `gemma4:e2b` (configurable via env var) |
+| AI inference | Ollama — `gemma4:e2b` (chat) & `gemma4:e4b` (causality) |
 | Task Queue | BullMQ + Redis (async causality pipeline processing) |
 | Speech-to-text | Wyoming Whisper via FastAPI bridge |
 | Text-to-speech | Wyoming Piper via FastAPI bridge |
@@ -127,7 +127,7 @@ Full detail — ERD, trust boundaries, deployment topology, auth flow, and all A
 ### Prerequisites
 
 - Docker and Docker Compose
-- Ollama running with `gemma4:e2b` pulled (or any OpenAI-compatible endpoint)
+- Ollama running with `gemma4:e2b` and `gemma4:e4b` pulled (or any OpenAI-compatible endpoint)
 - `ai-bridge` Docker network (create with `docker network create ai-bridge` if it doesn't exist)
 
 ### Environment
@@ -325,7 +325,7 @@ The project migrated from Vite SPA to Next.js 16 (App Router) to consolidate ser
 **Why local inference?**
 Resident data is sensitive by nature. Running inference locally via Ollama means no case content ever leaves the network — no cloud API, no usage logs on a third-party server. It also eliminates per-session API costs at scale.
 
-**Why `gemma3n:e2b`?**
+**Why `gemma4:e2b`?**
 Tested against several models for this specific workload. It handles the colloquial, code-switching way residents actually speak well enough to extract structured case information reliably. Model selection here was empirical, not theoretical.
 
 **Why the consent gate?**

@@ -16,7 +16,7 @@ Thank you for your interest in contributing to MPS-Connect. This project aims to
 
 - Docker and Docker Compose
 - Node.js 20+ (for local development outside Docker)
-- Ollama with at least one model pulled (e.g. `gemma4:e2b`)
+- Ollama with local models pulled (e.g. `gemma4:e2b` and `gemma4:e4b`)
 
 ### Local Development
 

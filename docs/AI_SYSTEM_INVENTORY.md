@@ -18,7 +18,7 @@
 | ------- | ------- |
 | System ID | MPS-AI-001 |
 | Purpose | Constituency casework — receives resident issue descriptions, identifies relevant agencies, and explains available help options |
-| AI Model | Ollama gemma4:e4b (locally hosted) |
+| AI Model | Ollama gemma4:e2b (locally hosted) |
 | IMDA Classification | Tool-Using Agentic AI |
 | Human Involvement Level | HOTL (Human-on-the-Loop) — AI categorises, human approves (Gate 0, Gate 1) |
 | Risk Tier | High (affects citizen access to government services) |
