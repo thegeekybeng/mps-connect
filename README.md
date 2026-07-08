@@ -29,7 +29,7 @@ Staff get a unified dashboard with all incoming cases. Pre-session triage is don
 - **Case Writer Intelligence panel** — 3-stage causality engine (Foundation → Reasoning → Action) producing a structured `CausalGraph`: urgency assessment, root cause identification, hidden risk detection, information gap analysis, and agency routing with confidence scoring per causal node
 - **Multi-agency correspondence** — per-agency appeal letters generated deterministically from the `CausalGraph`; each letter is domain-weighted, agency-specific, sequenced by the document queue, and PDPA-compliant (resident PII held as `██` placeholders, completed by the writer inside gather.gov.sg)
 - **Copy to Gather bridge** — letters copied to clipboard for submission via gather.gov.sg; governance gate holds the copy action until MP or administrator approval is granted
-- Human-in-the-loop governance — six mandatory review gates ensuring no AI decision reaches formal correspondence without verified human sign-off
+- Human-in-the-loop governance — seven mandatory review gates (Gate 0–6) ensuring no AI decision reaches formal correspondence without verified human sign-off
 - Immutable audit trail — cryptographically chained case event log with SLA tracking per agency; distinguishes automated receipt acknowledgement (`AGY-RCV`) from substantive response (`AGY-RSP`)
 - **RBAC** — 5 roles (admin, writer, approver, registry, mp) with granular permission control
 
@@ -61,15 +61,15 @@ Four layers, two cross-cutting bars. Business defines the requirements — every
 
 👉 **[View the High-Res HTML Layered Architecture Chart](docs/charts/architecture-overview.html)**
 
-**Cross-cutting concerns** span all layers: **Data Persistence** (PostgreSQL + SHA-256 chained SQLite audit log) and **Security · Governance · PDPA** (OWASP Top 10 for LLM Applications 2025, RBAC, PII masking, 6 HITL gates, immutable audit trail).
+**Cross-cutting concerns** span all layers: **Data Persistence** (PostgreSQL + SHA-256 chained SQLite audit log) and **Security · Governance · PDPA** (OWASP Top 10 for LLM Applications 2025, RBAC, PII masking, 7 HITL gates, immutable audit trail).
 
 ### Case Lifecycle
 
-Every case follows this state machine. Six Human-in-the-Loop gates ensure no AI decision reaches formal correspondence without verified human sign-off.
+Every case follows this state machine. Seven Human-in-the-Loop gates (Gate 0–6) ensure no AI decision reaches formal correspondence without verified human sign-off.
 
 👉 **[View the High-Res HTML Case Lifecycle Chart](docs/charts/state_case.html)**
 
-> **HITL Gates:** 1 — Low confidence warning (display) · 2 — Fact verification (submission blocker) · 3 — Agency override (action gate) · 4 — Causality opt-in (action gate) · 5 — MP approval (approval gate) · 6 — AI rule-engine pre-check (automatic)
+> **HITL Gates:** 0 — PDPA consent (entry blocker · Enforced) · 1 — Low confidence warning (display · Enforced) · 2 — Fact verification (submission blocker · Enforced) · 3 — Agency override (action gate · Enforced) · 4 — Causality opt-in (action gate · Enforced) · 5 — MP approval (approval gate · Enforced) · 6 — AI rule-engine pre-check (automatic · Enforced)
 
 ### Architecture Documentation
 

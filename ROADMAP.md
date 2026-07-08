@@ -9,7 +9,7 @@
 | Phase | Scope | Status |
 | --- | --- | --- |
 | **Pre-launch baseline** | 97-branch constituency registry, immutable audit DB, SLA tracking, secure document upload portal | 🔲 Planned |
-| **Phase 1** | CWI causality engine (3-stage, Ollama-native), Case Writer Intelligence panel, multi-agency letter generation, Copy to Gather bridge, 5 HITL governance gates | ✅ Implemented |
+| **Phase 1** | CWI causality engine (3-stage, Ollama-native), Case Writer Intelligence panel, multi-agency letter generation, Copy to Gather bridge, 7 HITL governance gates (Gate 0–6) | ✅ Implemented |
 | **Phase 2** | Demand-driven document collection — `DocumentRequirement` schema, per-case upload checklist driven by causality engine output, case-ID token upload portal (no SingPass dependency) | 🔲 Next |
 | **Phase 3** | G2G document requests to public institutions (SingHealth/NHG), inline letter annotation with hover tooltips, SingPass OIDC for high-assurance cases, OneMap precision routing | 🔲 Planned |
 | **Phase 4** | HITL-RAG continuous learning pipeline, confidence-based case clustering, batch approval for routine cases | 🔲 Planned |
@@ -200,15 +200,17 @@ The causality engine is live as a 3-stage Ollama pipeline in `api/server.js`, ac
 
 **Multi-agency letter generation.** Letters are assembled in pure JavaScript (no LLM, deterministic) from the 18-agency template registry. Each letter is domain-weighted to the agency's mandate, cross-referential ("Concurrent letters sent to: HDB, MSF"), and sequenced by the document queue order.
 
-**Five human-in-the-loop gates (infrastructure in place, UI gates in progress):**
+**Seven human-in-the-loop gates (Gate 0–6, all enforced):**
 
-| Gate | Type | Trigger |
-| --- | --- | --- |
-| 1 — Low confidence warning | Display | Agency score < 0.6 at categorisation |
-| 2 — Fact verification | Submission blocker | Writer must confirm or dispute each AI-extracted fact before submitting for review |
-| 3 — Agency override | Action gate | Any agency add or remove requires a documented reason |
-| 4 — Causality opt-in | Action gate | Downstream scheme suggestions require explicit human action to add to the case |
-| 5 — MP approval acknowledgement | Approval gate | MP must confirm they have reviewed AI reasoning before approving the letter |
+| Gate | Type | Trigger | Status |
+| --- | --- | --- | --- |
+| 0 — PDPA consent | Entry blocker | Resident must tick 3 explicit consent checkboxes (privacy, AI use, data retention) before chat | Enforced |
+| 1 — Low confidence warning | Display | Agency score < 0.6 at categorisation | Enforced |
+| 2 — Fact verification | Submission blocker | Writer must confirm or dispute each AI-extracted fact before submitting for review | Enforced |
+| 3 — Agency override | Action gate | Any agency add or remove requires a documented reason | Enforced |
+| 4 — Causality opt-in | Action gate | Downstream scheme suggestions require explicit human action to add to the case | Enforced |
+| 5 — MP approval acknowledgement | Approval gate | MP must confirm they have reviewed AI reasoning before approving the letter | Enforced |
+| 6 — AI rule-engine pre-check | Automatic | AI agent evaluates case against configured approval preferences before auto-approve | Enforced |
 
 Every gate produces an immutable audit event. The full chain — what the AI proposed, what the human confirmed or corrected, and why — is queryable per case.
 

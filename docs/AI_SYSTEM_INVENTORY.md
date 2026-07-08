@@ -20,7 +20,7 @@
 | Purpose | Constituency casework — receives resident issue descriptions, identifies relevant agencies, and explains available help options |
 | AI Model | Ollama gemma4:e4b (locally hosted) |
 | IMDA Classification | Tool-Using Agentic AI |
-| Human Involvement Level | HOTL (Human-on-the-Loop) — AI categorises, human approves |
+| Human Involvement Level | HOTL (Human-on-the-Loop) — AI categorises, human approves (Gate 0, Gate 1) |
 | Risk Tier | High (affects citizen access to government services) |
 | Data Processed | Resident case descriptions (text/voice), postal codes |
 | PII Handling | Masked before LLM transmission (NRIC, phone, email, address) |
@@ -36,7 +36,7 @@
 | Purpose | 3-stage causal analysis pipeline — extracts entities/timeline, builds causal graph, routes to agencies, and generates letter templates |
 | AI Model | Ollama gemma4:e4b (locally hosted, same instance) |
 | IMDA Classification | Decision-Support AI |
-| Human Involvement Level | HITL (Human-in-the-Loop) — MP must approve every letter |
+| Human Involvement Level | HITL (Human-in-the-Loop) — MP must approve every letter (Gate 2, Gate 3, Gate 4, Gate 5) |
 | Risk Tier | High (generates formal government correspondence) |
 | Data Processed | Conversation transcripts, case metadata |
 | PII Handling | Sanitized inputs; letters use placeholders (██ NRIC ██) for completion by staff |
@@ -52,7 +52,7 @@
 | Purpose | Evaluates pending letters against MP preferences for auto-approval candidacy |
 | AI Model | Ollama cascade: gemma4:e2b → gemma4:12b-mlx → qwen3.6:27b |
 | IMDA Classification | Decision-Support AI |
-| Human Involvement Level | HOTL — auto-approves within strict bounds; escalates outside bounds |
+| Human Involvement Level | HOTL — auto-approves within strict bounds; escalates outside bounds (Gate 6) |
 | Risk Tier | High (makes pre-approval recommendations) |
 | Data Processed | Case category, urgency, summary, core request |
 | PII Handling | Operates on metadata only — no raw resident text |
@@ -122,3 +122,19 @@ Letter sent to agency
 - **Decision Reviewer:** Staff user (writer/admin — `accountable_officer_id`)
 - **Final Authority:** MP (`approved_by` in `letters` table)
 - **Accountability Principle:** The AI cannot make final decisions. A human officer is always in the chain.
+
+---
+
+## HITL Gate Mapping
+
+> Cross-reference: Gates are defined in `README.md` (§ Case Lifecycle) and `ROADMAP.md` (§ Case Writer Intelligence). All 7 gates produce immutable audit events.
+
+| Gate | Name | Type | Applicable System(s) | Human Involvement | Status |
+| --- | --- | --- | --- | --- | --- |
+| 0 | PDPA consent | Entry blocker | MPS-AI-001 (Chat Agent) | HOTL — resident must consent before AI interaction | Enforced |
+| 1 | Low confidence warning | Display | MPS-AI-001 / MPS-AI-002 | HOTL — writer sees warning when node confidence < 0.6 | Enforced |
+| 2 | Fact verification | Submission blocker | MPS-AI-002 (Causality Engine) | HITL — writer must confirm every AI-extracted fact | Enforced |
+| 3 | Agency override | Action gate | MPS-AI-002 (Causality Engine) | HITL — agency add/remove requires documented reason | Enforced |
+| 4 | Causality opt-in | Action gate | MPS-AI-002 (Causality Engine) | HITL — writer manually triggers causal analysis | Enforced |
+| 5 | MP approval / sign-off | Approval gate | MPS-AI-002 (Causality Engine) | HITL — MP reviews AI reasoning before approving letters | Enforced |
+| 6 | AI rule-engine pre-check | Automatic | MPS-AI-003 (Approval Agent) | HOTL — agent evaluates against MP preferences; escalates if outside bounds | Enforced |

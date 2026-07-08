@@ -213,3 +213,150 @@ function deriveCategory(
 
   return AGENCY_CATEGORY[primary.agency] ?? null;
 }
+
+// ── HITL Gate 2 — Submit for Review ─────────────────────────────
+// Transitions a case from new/drafting → pending_approval.
+// BLOCKS unless the writer has confirmed every AI-extracted key fact.
+// Writes an immutable audit event recording which facts were confirmed.
+export async function submitForReview(
+  caseId: number,
+  confirmedFactIndices: number[]
+): Promise<{ ok: boolean; error?: string }> {
+  const session = await requireAuth();
+  if (!can(session.role, 'cases:update')) {
+    return { ok: false, error: 'Insufficient permissions.' };
+  }
+
+  // Fetch case and validate status
+  const row = await dbOne<{ status: string; key_facts: string[] | null }>(
+    'SELECT status, key_facts FROM cases WHERE id = $1',
+    [caseId]
+  );
+  if (!row) return { ok: false, error: 'Case not found.' };
+  if (row.status !== 'new' && row.status !== 'drafting') {
+    return { ok: false, error: `Cannot submit — case is '${row.status}'. Only 'new' or 'drafting' cases can be submitted.` };
+  }
+
+  // Gate 2 enforcement: every key fact must be confirmed
+  const keyFacts = row.key_facts ?? [];
+  if (keyFacts.length > 0) {
+    if (!confirmedFactIndices || confirmedFactIndices.length !== keyFacts.length) {
+      return {
+        ok: false,
+        error: `Gate 2 blocked: ${keyFacts.length} fact(s) require confirmation. ${confirmedFactIndices?.length ?? 0} confirmed.`,
+      };
+    }
+    // Verify indices are valid (0-based, contiguous)
+    const expected = Array.from({ length: keyFacts.length }, (_, i) => i);
+    const sorted = [...confirmedFactIndices].sort((a, b) => a - b);
+    if (JSON.stringify(sorted) !== JSON.stringify(expected)) {
+      return { ok: false, error: 'Gate 2 blocked: invalid fact confirmation indices.' };
+    }
+  }
+
+  // Transition to pending_approval
+  await dbOne(
+    `UPDATE cases SET status = 'pending_approval', updated_at = NOW() WHERE id = $1`,
+    [caseId]
+  );
+
+  // Audit trail — Gate 2 fact verification event
+  await dbOne(
+    `INSERT INTO case_events (case_id, actor_id, actor_role, action, detail)
+     VALUES ($1, $2, $3, 'submitted_for_review', $4)`,
+    [
+      caseId,
+      session.userId,
+      session.role,
+      JSON.stringify({
+        gate: 'HITL-2-fact-verification',
+        factsConfirmed: keyFacts.length,
+        confirmedFacts: keyFacts,
+        submittedBy: session.userId,
+      }),
+    ]
+  );
+
+  revalidatePath('/dashboard/cases');
+  revalidatePath(`/dashboard/cases/${caseId}`);
+  revalidatePath('/dashboard/approvals');
+  revalidatePath('/dashboard');
+
+  return { ok: true };
+}
+
+// ── HITL Gate 3 — Agency Override ────────────────────────────────
+// Adds or removes an agency from the case's suggested_agencies.
+// BLOCKS unless a documented reason (≥ 5 chars) is provided.
+// Writes an immutable audit event recording the override and reason.
+export async function overrideAgency(
+  caseId: number,
+  action: 'add' | 'remove',
+  agency: string,
+  reason: string
+): Promise<{ ok: boolean; error?: string; agencies?: string[] }> {
+  const session = await requireAuth();
+  if (!can(session.role, 'cases:update')) {
+    return { ok: false, error: 'Insufficient permissions.' };
+  }
+
+  // Gate 3 enforcement: reason is mandatory
+  const trimmedReason = reason?.trim() ?? '';
+  if (trimmedReason.length < 5) {
+    return { ok: false, error: 'Gate 3 blocked: a documented reason (minimum 5 characters) is required for agency overrides.' };
+  }
+
+  const trimmedAgency = agency?.trim() ?? '';
+  if (!trimmedAgency) {
+    return { ok: false, error: 'Agency name is required.' };
+  }
+
+  // Fetch current agencies
+  const row = await dbOne<{ suggested_agencies: string[] | null }>(
+    'SELECT suggested_agencies FROM cases WHERE id = $1',
+    [caseId]
+  );
+  if (!row) return { ok: false, error: 'Case not found.' };
+
+  let agencies = row.suggested_agencies ?? [];
+
+  if (action === 'add') {
+    if (agencies.includes(trimmedAgency)) {
+      return { ok: false, error: `Agency '${trimmedAgency}' is already in the list.` };
+    }
+    agencies = [...agencies, trimmedAgency];
+  } else {
+    if (!agencies.includes(trimmedAgency)) {
+      return { ok: false, error: `Agency '${trimmedAgency}' is not in the list.` };
+    }
+    agencies = agencies.filter(a => a !== trimmedAgency);
+  }
+
+  // Persist updated agencies
+  await dbOne(
+    `UPDATE cases SET suggested_agencies = $1, updated_at = NOW() WHERE id = $2`,
+    [agencies, caseId]
+  );
+
+  // Audit trail — Gate 3 agency override event
+  await dbOne(
+    `INSERT INTO case_events (case_id, actor_id, actor_role, action, detail)
+     VALUES ($1, $2, $3, 'agency_override', $4)`,
+    [
+      caseId,
+      session.userId,
+      session.role,
+      JSON.stringify({
+        gate: 'HITL-3-agency-override',
+        override_action: action,
+        agency: trimmedAgency,
+        reason: trimmedReason,
+        resultingAgencies: agencies,
+      }),
+    ]
+  );
+
+  revalidatePath(`/dashboard/cases/${caseId}`);
+
+  return { ok: true, agencies };
+}

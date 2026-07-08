@@ -13,6 +13,7 @@ import {
   ChevronDown, ChevronUp, RefreshCw, CheckCircle2,
 } from 'lucide-react';
 import { runCausalityEngine } from '@/app/actions/causality';
+import LowConfidenceWarning from '@/components/cases/LowConfidenceWarning';
 
 interface AgencyRoute {
   agency:       string;
@@ -31,6 +32,7 @@ interface CausalGraph {
   documentRequirements?: unknown[];   // typed as unknown[] — cast at save site
   keyFacts?: string[];
   suggestedAgencies?: string[];
+  nodes?: Array<{ id?: string; label?: string; confidence?: number; type?: string }>;
 }
 
 interface Props {
@@ -140,6 +142,12 @@ export default function CaseIntelligencePanel({
       {/* Results */}
       {hasGraph && (
         <div className="space-y-4">
+
+          {/* HITL Gate 1 — Low Confidence Warning */}
+          <LowConfidenceWarning
+            nodes={graph!.nodes ?? []}
+            urgencyScore={graph!.urgency?.score}
+          />
 
           {/* Urgency */}
           {graph!.urgency && (

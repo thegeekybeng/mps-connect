@@ -16,6 +16,8 @@ import DocumentsCard from '@/components/documents/DocumentsCard';
 import CaseIntelligencePanel from '@/components/cases/CaseIntelligencePanel';
 import AgentReviewButton from '@/components/agent/AgentReviewButton';
 import CaseApprovalBar from '@/components/cases/CaseApprovalBar';
+import FactVerificationGate from '@/components/cases/FactVerificationGate';
+import AgencyOverrideGate from '@/components/cases/AgencyOverrideGate';
 
 export const metadata: Metadata = { title: 'Case Detail — MPS Connect' };
 
@@ -354,6 +356,15 @@ export default async function CaseDetailPage({
             </section>
           )}
 
+          {/* HITL Gate 2 — Fact Verification (submission blocker) */}
+          {canWrite && caseRecord.key_facts && caseRecord.key_facts.length > 0 && (
+            <FactVerificationGate
+              caseId={caseId}
+              keyFacts={caseRecord.key_facts}
+              caseStatus={caseRecord.status}
+            />
+          )}
+
           {/* AI Urgency Rationale */}
           {causalGraph?.urgency?.rationale && (
             <section className="gov-card overflow-hidden">
@@ -396,6 +407,15 @@ export default async function CaseDetailPage({
                 ))}
               </div>
             </section>
+          )}
+
+          {/* HITL Gate 3 — Agency Override (action gate) */}
+          {canWrite && caseRecord.suggested_agencies && (
+            <AgencyOverrideGate
+              caseId={caseId}
+              suggestedAgencies={caseRecord.suggested_agencies}
+              canWrite={canWrite}
+            />
           )}
 
           {/* Letters Preview */}

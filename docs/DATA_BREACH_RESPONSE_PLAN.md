@@ -1,10 +1,12 @@
 # MPS Connect — Data Breach Response Plan
+
 > PDPA §26D — Mandatory Breach Notification
 > Updated: 2026-06-15
 
 ## 1. Scope
 
 This plan covers all personal data processed by MPS Connect:
+
 - Resident names, postal codes, phone numbers
 - Case descriptions and conversation transcripts
 - AI-generated letters and case metadata
@@ -13,7 +15,7 @@ This plan covers all personal data processed by MPS Connect:
 ## 2. Designated Data Protection Officer (DPO)
 
 | Field | Value |
-|-------|-------|
+| ----- | ----- |
 | **Name** | System Administrator |
 | **Role** | System Developer & Operator |
 | **Contact** | Via constituency office |
@@ -23,6 +25,7 @@ This plan covers all personal data processed by MPS Connect:
 ## 3. What Constitutes a Notifiable Breach
 
 Under PDPA §26D, a breach is notifiable if:
+
 - It involves **500+ individuals**, OR
 - It involves **sensitive personal data** (NRIC, financial, health, biometric), OR
 - It is likely to result in **significant harm** to affected individuals
@@ -30,8 +33,9 @@ Under PDPA §26D, a breach is notifiable if:
 ## 4. Breach Detection
 
 ### Automated Detection
+
 | Signal | Source | Action |
-|--------|--------|--------|
+| ------ | ------ | ------ |
 | Canary token triggered | AI proxy audit log (`SECURITY_CANARY_TRIGGERED`) | Investigate prompt extraction attempt |
 | Encoded injection detected | AI proxy audit log (`ENCODED_INJECTION_DETECTED`) | Block and investigate |
 | Origin blocked | AI proxy audit log (`BLOCKED_ORIGIN`) | Check for unauthorized access |
@@ -39,13 +43,14 @@ Under PDPA §26D, a breach is notifiable if:
 | Unusual login patterns | `users.last_seen_at` — off-hours, rapid succession | Investigate credential compromise |
 
 ### Manual Detection
+
 - Staff reports suspicious activity
 - External notification from third party
 - Routine security review discovers anomaly
 
 ## 5. Response Timeline (PDPA §26D)
 
-```
+```text
 T+0h    Breach detected
          ↓
 T+1h    Incident commander notified (DPO)
@@ -78,6 +83,7 @@ T+30d   Remediation verified and documented
 ## 6. Containment Playbook
 
 ### AI System Compromise
+
 ```bash
 # 1. Activate kill switch — stops all AI processing
 echo "AI_KILL_SWITCH=true" >> ./.env
@@ -91,6 +97,7 @@ docker cp mps-ai-proxy:/data/audit.db ./audit_backup_$(date +%Y%m%d_%H%M).db
 ```
 
 ### Database Compromise
+
 ```bash
 # 1. Rotate PostgreSQL password
 # Update .env with new POSTGRES_PASSWORD
@@ -104,6 +111,7 @@ docker exec mps-ai-proxy node -e "const {verifyChain}=require('./audit');console
 ```
 
 ### Container/Host Compromise
+
 ```bash
 # 1. Stop all MPS Connect services
 docker compose down
@@ -115,7 +123,7 @@ docker logs mps-ai-proxy 2>&1 | tail -500 >> /tmp/mps_incident_$(date +%Y%m%d).l
 
 ## 7. PDPC Notification Template
 
-```
+```text
 To: PDPC (Personal Data Protection Commission)
 Subject: Mandatory Data Breach Notification — MPS Connect
 
@@ -133,6 +141,7 @@ Subject: Mandatory Data Breach Notification — MPS Connect
 ## 8. Post-Incident Review
 
 After every breach (notifiable or not):
+
 1. Document root cause in `docs/incidents/` with date-stamped filename
 2. Update this plan if gaps are found
 3. Review with constituency office staff
@@ -141,6 +150,7 @@ After every breach (notifiable or not):
 ## 9. Testing
 
 This plan should be tested annually:
+
 - [ ] Tabletop exercise with DPO (scenario-based)
 - [ ] Kill switch activation and recovery test
 - [ ] Audit chain verification test
