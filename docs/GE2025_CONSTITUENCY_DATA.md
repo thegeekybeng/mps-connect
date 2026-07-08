@@ -23,7 +23,7 @@
 ### 1. Aljunied GRC — Workers' Party
 
 | MP | Division | Source |
-|---|---|---|
+| --- | --- | --- |
 | Pritam Singh | Bedok Reservoir–Punggol | ⚠️ Wikipedia |
 | Sylvia Lim | Serangoon | ⚠️ Wikipedia |
 | Gerald Giam | Eunos | ⚠️ Wikipedia |
@@ -37,7 +37,7 @@
 ### 2. Ang Mo Kio GRC — PAP
 
 | MP | Division | Source |
-|---|---|---|
+| --- | --- | --- |
 | Lee Hsien Loong | Teck Ghee | amktc.org.sg ✅ |
 | Darryl David | Ang Mo Kio–Hougang | amktc.org.sg ✅ |
 | Nadia Ahmad Samdin | Cheng San | ⚠️ Wikipedia |
@@ -51,7 +51,7 @@
 ### 3. Bishan–Toa Payoh GRC — PAP
 
 | MP | Division | Source |
-|---|---|---|
+| --- | --- | --- |
 | Chee Hong Tat | Toa Payoh West–Thomson | btptc.org.sg ✅ |
 | Saktiandi Supaat | Toa Payoh East | btptc.org.sg ✅ |
 | Elysa Chen | Bishan East–Sin Ming | btptc.org.sg ✅ |
@@ -64,7 +64,7 @@
 ### 4. Chua Chu Kang GRC — PAP
 
 | MP | Division | Source |
-|---|---|---|
+| --- | --- | --- |
 | Tan See Leng | Chua Chu Kang | ⚠️ Wikipedia |
 | Zhulkarnain Abdul Rahim | Keat Hong | ⚠️ Wikipedia |
 | Choo Pei Ling | Brickland | ⚠️ Wikipedia |
@@ -77,7 +77,7 @@
 ### 5. East Coast GRC — PAP
 
 | MP | Division | Source |
-|---|---|---|
+| --- | --- | --- |
 | Edwin Tong | Joo Chiat | ectc.org.sg ✅ |
 | Tan Kiat How | Kampong Chai Chee | ectc.org.sg ✅ |
 | Dinesh Vasu Dash | Bedok | ectc.org.sg ✅ |
@@ -91,7 +91,7 @@
 ### 6. Holland–Bukit Timah GRC — PAP
 
 | MP | Division | Source |
-|---|---|---|
+| --- | --- | --- |
 | Vivian Balakrishnan | Bukit Timah | ⚠️ hbptc.org.sg (divisions listed, MP assignment inferred) |
 | Sim Ann | Cashew | ⚠️ hbptc.org.sg |
 | Christopher De Souza | Ulu Pandan | ⚠️ hbptc.org.sg |
@@ -104,7 +104,7 @@
 ### 7. Jalan Besar GRC — PAP
 
 | MP | Division | Source |
-|---|---|---|
+| --- | --- | --- |
 | Josephine Teo | Kreta Ayer–Kim Seng | jbtc.org.sg ✅ |
 | Denise Phua | Kampong Glam | jbtc.org.sg ✅ |
 | Wan Rizal | Kolam Ayer | **User-verified** ✅ |
@@ -117,7 +117,7 @@
 ### 8. Jurong East–Bukit Batok GRC — PAP
 
 | MP | Division | Source |
-|---|---|---|
+| --- | --- | --- |
 | Grace Fu | Jurong East | ⚠️ jrbbtc.org.sg (anchor, division inferred) |
 | Murali Pillai | Bukit Batok | jrbbtc.org.sg ✅ |
 | Rahayu Mahzam | Bukit Batok East | jrbbtc.org.sg ✅ |
@@ -131,7 +131,7 @@
 ### 9. Marine Parade–Braddell Heights GRC — PAP
 
 | MP | Division | Source |
-|---|---|---|
+| --- | --- | --- |
 | Goh Pei Ming | Marine Parade | mbtc.org.sg ✅ |
 | Muhammad Faishal Ibrahim | Kembangan | mbtc.org.sg ✅ |
 | Diana Pang | Geylang Serai | mbtc.org.sg ✅ |
@@ -145,7 +145,7 @@
 ### 10. Marsiling–Yew Tee GRC — PAP
 
 | MP | Division | Source |
-|---|---|---|
+| --- | --- | --- |
 | Lawrence Wong | Limbang | myttc.org.sg ✅ |
 | Zaqy Mohamad | Marsiling | myttc.org.sg ✅ |
 | Hany Soh | Woodgrove | myttc.org.sg ✅ |
@@ -158,7 +158,7 @@
 ### 11. Nee Soon GRC — PAP
 
 | MP | Division | Source |
-|---|---|---|
+| --- | --- | --- |
 | K. Shanmugam | Chong Pang | nstc.org.sg ✅ |
 | Goh Hanyan | Nee Soon Central | nstc.org.sg ✅ |
 | Jackson Lam | Nee Soon East | ⚠️ Wikipedia |
@@ -172,7 +172,7 @@
 ### 12. Pasir Ris–Changi GRC — PAP
 
 | MP | Division | Source |
-|---|---|---|
+| --- | --- | --- |
 | Indranee Rajah | Pasir Ris Central | ⚠️ pasirrischangi-tc.org.sg (TC leadership listed, division assignment inferred) |
 | Desmond Tan | Pasir Ris West | ⚠️ pasirrischangi-tc.org.sg |
 | Sharael Taha | Changi | ⚠️ pasirrischangi-tc.org.sg |
@@ -185,7 +185,7 @@
 ### 13. Punggol GRC — PAP
 
 | MP | Division | Source |
-|---|---|---|
+| --- | --- | --- |
 | Gan Kim Yong | Punggol North | punggoltown.com ✅ |
 | Janil Puthucheary | Punggol Coast | punggoltown.com ✅ |
 | Sun Xueling | Punggol West | punggoltown.com ✅ |
@@ -198,7 +198,7 @@
 ### 14. Sembawang GRC — PAP
 
 | MP | Division | Source |
-|---|---|---|
+| --- | --- | --- |
 | Ong Ye Kung | Sembawang Central | ⚠️ Wikipedia |
 | Vikram Nair | Woodlands | ⚠️ Wikipedia |
 | Mariam Jaafar | Admiralty | ⚠️ Wikipedia |
@@ -212,7 +212,7 @@
 ### 15. Sengkang GRC — Workers' Party
 
 | MP | Division | Source |
-|---|---|---|
+| --- | --- | --- |
 | Jamus Lim | Anchorvale | sktc.sg ✅ |
 | He Ting Ru | Buangkok | sktc.sg ✅ |
 | Abdul Muhaimin | Compassvale | sktc.sg ✅ |
@@ -225,7 +225,7 @@
 ### 16. Tampines GRC — PAP
 
 | MP | Division | Source |
-|---|---|---|
+| --- | --- | --- |
 | Masagos Zulkifli | Tampines West | ⚠️ tampines.org.sg (TC listed, division inferred) |
 | Baey Yam Keng | Tampines Central | ⚠️ tampines.org.sg |
 | Koh Poh Koon | Tampines North | ⚠️ tampines.org.sg |
@@ -239,7 +239,7 @@
 ### 17. Tanjong Pagar GRC — PAP
 
 | MP | Division | Source |
-|---|---|---|
+| --- | --- | --- |
 | Chan Chun Sing | Buona Vista | tptc.org.sg ✅ |
 | Joan Pereira | Henderson–Dawson | tptc.org.sg ✅ |
 | Alvin Tan | Moulmein–Cairnhill | tptc.org.sg ✅ |
@@ -253,7 +253,7 @@
 ### 18. West Coast–Jurong West GRC — PAP
 
 | MP | Division | Source |
-|---|---|---|
+| --- | --- | --- |
 | Desmond Lee | Boon Lay | wctc.org.sg ✅ |
 | Ang Wei Neng | Nanyang | wctc.org.sg ✅ |
 | Shawn Huang | Taman Jurong | wctc.org.sg ✅ |
@@ -267,7 +267,7 @@
 ## SMCs — 15 Constituencies, 15 MPs
 
 | Constituency | MP | Party | Postal Sectors |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Bukit Gombak SMC | Low Yen Ling | PAP | 67 |
 | Bukit Panjang SMC | Liang Eng Hwa | PAP | 65 |
 | Hougang SMC | Dennis Tan | WP | 53 |
@@ -291,7 +291,7 @@
 The first 2 digits of a 6-digit Singapore postal code determine the postal sector. This table shows the **approximate** constituency assignment used in the demo:
 
 | Sector | Area | Constituency | Division | MP |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | 01–06 | CBD / Raffles Place / Marina | Tanjong Pagar GRC | Tanjong Pagar–Tiong Bahru | Foo Cexiang |
 | 07–08 | Chinatown / Tanjong Pagar | Jalan Besar GRC | Kreta Ayer–Kim Seng | Josephine Teo |
 | 09–10 | Harbourfront / Telok Blangah | Tanjong Pagar GRC | Telok Blangah | Rachel Ong |
