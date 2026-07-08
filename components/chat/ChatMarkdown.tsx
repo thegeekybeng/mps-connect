@@ -88,7 +88,7 @@ export default function ChatMarkdown({ content, className }: Props) {
         const nm = lines[i].trim().match(/^(\d+)\.\s+(.+)/);
         if (!nm) break;
         items.push(
-          <li key={i} className="ml-1">
+          <li key={i} className="ml-1" value={parseInt(nm[1], 10)}>
             {parseInline(nm[2])}
           </li>
         );

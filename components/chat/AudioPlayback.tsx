@@ -2,7 +2,6 @@
 
 import { useState, useRef, useCallback } from 'react';
 import { Volume2, Loader2, VolumeX } from 'lucide-react';
-import { synthesizeSpeech } from '@/app/actions/chat';
 
 interface Props {
   text: string;
@@ -32,7 +31,7 @@ export default function AudioPlayback({ text, sessionId, messageId }: Props) {
     try {
       await audioRef.current.play();
       setIsPlaying(true);
-    } catch (e) {
+    } catch {
       setIsPlaying(false);
       setError(true);
     }
@@ -55,21 +54,21 @@ export default function AudioPlayback({ text, sessionId, messageId }: Props) {
       return;
     }
 
-    // Fetch TTS audio
+    // Fetch TTS audio via API route — streams raw WAV bytes
     setIsLoading(true);
     try {
-      const result = await synthesizeSpeech(text, sessionId);
-      if (result.error || !result.audioBase64) {
-        throw new Error('Synthesis failed');
+      const resp = await fetch('/api/audio/synthesize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, sessionId }),
+      });
+
+      if (!resp.ok) {
+        throw new Error(`Synthesis failed: ${resp.status}`);
       }
 
-      // Convert base64 to blob URL
-      const byteChars = atob(result.audioBase64);
-      const byteArray = new Uint8Array(byteChars.length);
-      for (let i = 0; i < byteChars.length; i++) {
-        byteArray[i] = byteChars.charCodeAt(i);
-      }
-      const blob = new Blob([byteArray], { type: 'audio/wav' });
+      // Response is raw WAV bytes — create blob URL directly
+      const blob = await resp.blob();
       const url = URL.createObjectURL(blob);
       audioCache.set(messageId, url);
 

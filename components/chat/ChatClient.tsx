@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useRef, useEffect, useTransition, useCallback, useMemo } from 'react';
-import { sendMessage, submitCase } from '@/app/actions/chat';
-import { Send, Bot, User, AlertTriangle, Loader2, CheckCircle2, ArrowLeft, ShieldCheck } from 'lucide-react';
+import { sendMessage, submitCase, generateFactDraft } from '@/app/actions/chat';
+import { Send, Bot, User, AlertTriangle, Loader2, CheckCircle2, ArrowLeft, ShieldCheck, Upload, FileCheck2 } from 'lucide-react';
 import VoiceRecorder from '@/components/chat/VoiceRecorder';
 import AudioPlayback from '@/components/chat/AudioPlayback';
 import ChatMarkdown from '@/components/chat/ChatMarkdown';
@@ -45,11 +45,33 @@ export default function ChatClient({ mpName, constituency, division, constituenc
   const sessionId = useMemo(() => crypto.randomUUID(), []);
 
   // Case submission
-  const [showSubmit, setShowSubmit] = useState(false);
+  const [readyToSubmit, setReadyToSubmit] = useState(false);
   const [submitName, setSubmitName] = useState('');
   const [submitPhone, setSubmitPhone] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [submitted, setSubmitted] = useState<{ caseNumber: string; message: string } | null>(null);
+  const [submitted, setSubmitted] = useState<{ caseNumber: string; message: string; uploadToken?: string } | null>(null);
+
+  // Derived state for submit CTA visibility
+  const userMsgCount = messages.filter(m => m.role === 'user').length;
+  const showSubmit = (readyToSubmit || userMsgCount >= 4) && !submitted;
+
+  // Fact-finding review panel
+  const [factDraft, setFactDraft] = useState<{
+    category: string;
+    urgency: string;
+    summary: string;
+    coreRequest: string;
+    keyFacts: string[];
+    suggestedAgencies: string[];
+  } | null>(null);
+  const [loadingFacts, setLoadingFacts] = useState(false);
+  const [consentApproved, setConsentApproved] = useState(false);
+  const [factReviewActive, setFactReviewActive] = useState(false);
+
+  // Document Upload state
+  const [uploadedFiles, setUploadedFiles] = useState<string[]>([]);
+  const [uploadState, setUploadState] = useState<{ status: 'idle' | 'uploading' | 'success' | 'error'; message: string }>({ status: 'idle', message: '' });
+  const [showUploader, setShowUploader] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -61,17 +83,53 @@ export default function ChatClient({ mpName, constituency, division, constituenc
     }
   }, [messages, isTyping]);
 
-  // Show submit CTA after 3+ user messages
-  useEffect(() => {
-    const userMsgCount = messages.filter(m => m.role === 'user').length;
-    if (userMsgCount >= 3 && !submitted && !showSubmit) {
-      setTimeout(() => setShowSubmit(true), 0);
+  // Helper to reset submission flow when starting a new case
+  const resetSubmissionFlow = useCallback(() => {
+    setSubmitted(null);
+    setFactDraft(null);
+    setFactReviewActive(false);
+    setConsentApproved(false);
+    setReadyToSubmit(false);
+    setUploadedFiles([]);
+    setUploadState({ status: 'idle', message: '' });
+    setShowUploader(false);
+  }, []);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !submitted?.uploadToken) return;
+
+    setUploadState({ status: 'uploading', message: 'Uploading and scanning...' });
+
+    const form = new FormData();
+    form.append('file', file);
+
+    try {
+      const res = await fetch(`/api/upload/${submitted.uploadToken}`, {
+        method: 'POST',
+        body: form,
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        setUploadState({ status: 'success', message: `✓ ${file.name} uploaded successfully.` });
+        setUploadedFiles(prev => [...prev, file.name]);
+      } else {
+        setUploadState({ status: 'error', message: data.error || 'Upload failed.' });
+      }
+    } catch (err) {
+      setUploadState({ status: 'error', message: 'Network error. Please try again.' });
     }
-  }, [messages, submitted, showSubmit]);
+  };
 
   const handleSend = useCallback(() => {
     const trimmed = input.trim();
     if (!trimmed || isPending) return;
+
+    // Reset submitted state for a new case flow if they continue chatting after a submission
+    if (submitted) {
+      resetSubmissionFlow();
+    }
 
     const userMsg: Message = {
       id: crypto.randomUUID(),
@@ -111,6 +169,10 @@ export default function ChatClient({ mpName, constituency, division, constituenc
         setUrgentDetected(true);
       }
 
+      if (result.readyToSubmit) {
+        setReadyToSubmit(true);
+      }
+
       const aiMsg: Message = {
         id: crypto.randomUUID(),
         role: 'assistant',
@@ -120,10 +182,15 @@ export default function ChatClient({ mpName, constituency, division, constituenc
       };
       setMessages(prev => [...prev, aiMsg]);
     });
-  }, [input, isPending, messages, mpName, constituency, division, startTransition]);
+  }, [input, isPending, messages, mpName, constituency, division, startTransition, submitted, resetSubmissionFlow]);
 
   // Handle voice transcription — auto-send the transcribed text
   const handleVoiceTranscription = useCallback((result: { text: string; language: string }) => {
+    // Reset submitted state for a new case flow if they continue chatting after a submission
+    if (submitted) {
+      resetSubmissionFlow();
+    }
+
     const voiceMsg: Message = {
       id: crypto.randomUUID(),
       role: 'user',
@@ -162,6 +229,10 @@ export default function ChatClient({ mpName, constituency, division, constituenc
         setUrgentDetected(true);
       }
 
+      if (aiResult.readyToSubmit) {
+        setReadyToSubmit(true);
+      }
+
       const aiMsg: Message = {
         id: crypto.randomUUID(),
         role: 'assistant',
@@ -171,7 +242,7 @@ export default function ChatClient({ mpName, constituency, division, constituenc
       };
       setMessages(prev => [...prev, aiMsg]);
     });
-  }, [messages, mpName, constituency, division, startTransition]);
+  }, [messages, mpName, constituency, division, startTransition, submitted, resetSubmissionFlow]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -182,6 +253,7 @@ export default function ChatClient({ mpName, constituency, division, constituenc
 
   const handleSubmitCase = async () => {
     if (!submitName.trim()) return;
+    if (!consentApproved) return;
     setSubmitting(true);
 
     const conversation = messages.map(m => ({
@@ -194,13 +266,22 @@ export default function ChatClient({ mpName, constituency, division, constituenc
       residentName: submitName.trim(),
       phone: submitPhone.trim() || undefined,
       constituencyId,
+      category: factDraft?.category,
+      urgency: factDraft?.urgency,
+      summary: factDraft?.summary,
+      coreRequest: factDraft?.coreRequest,
+      keyFacts: factDraft?.keyFacts,
+      suggestedAgencies: factDraft?.suggestedAgencies,
     });
 
     setSubmitting(false);
 
     if (result.success) {
-      setSubmitted({ caseNumber: result.caseNumber || '', message: result.message });
-      setShowSubmit(false);
+      setSubmitted({
+        caseNumber: result.caseNumber || '',
+        message: result.message,
+        uploadToken: result.uploadToken
+      });
     } else {
       setError(result.message);
     }
@@ -229,7 +310,7 @@ export default function ChatClient({ mpName, constituency, division, constituenc
         </div>
       </header>
 
-      {/* ── AI Disclosure Banner (IMDA AIGF §4 / GOV-TD-002) ─── */}
+      {/* ── AI Disclosure Banner ─── */}
       {!aiDisclosureDismissed && (
         <div
           className="shrink-0 px-4 py-2.5 sm:px-6"
@@ -270,14 +351,99 @@ export default function ChatClient({ mpName, constituency, division, constituenc
         </div>
       )}
 
-      {/* ── Case submitted banner ──────────────────────────── */}
+      {/* ── Case submitted actions panel ───────────────────── */}
       {submitted && (
-        <div className="shrink-0 bg-emerald-50 border-b border-emerald-200 px-4 py-3 sm:px-6">
-          <div className="max-w-2xl mx-auto flex items-center gap-2.5">
-            <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
-            <div>
-              <p className="text-sm font-semibold text-emerald-800">Case {submitted.caseNumber} submitted</p>
-              <p className="text-xs text-emerald-600">{submitted.message}</p>
+        <div className="shrink-0 px-4 py-4 sm:px-6 border-b border-emerald-200" style={{ background: '#F0FDF4' }}>
+          <div className="max-w-2xl mx-auto space-y-4">
+            <div className="flex items-start gap-3">
+              <CheckCircle2 size={20} className="text-emerald-600 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <h3 className="text-sm font-bold text-emerald-900">Case Submitted successfully (Ref: {submitted.caseNumber})</h3>
+                <p className="text-xs text-emerald-800 leading-relaxed">
+                  Your elected MP, <strong>{mpName}</strong>, and our volunteer case writers will draft a formal appeal representation letter. Your MP will personally review and sign it before it is officially sent to the relevant agency. The agency will formally reply directly to you once they receive and process our letter.
+                </p>
+              </div>
+            </div>
+
+            {/* Upload Panel */}
+            {showUploader && submitted.uploadToken && (
+              <div className="bg-white p-4 rounded-xl border border-emerald-100 space-y-3 shadow-sm">
+                <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <Upload size={14} className="text-emerald-600" />
+                  Submit Supporting Documents
+                </h4>
+                <p className="text-[11px] text-slate-500">
+                  Please upload copies of any relevant summons, letters, NRIC, notices, or photos to support your case.
+                </p>
+                
+                <div className="flex flex-col gap-2">
+                  <label className="flex items-center justify-center gap-2 border-2 border-dashed border-slate-200 rounded-lg px-4 py-3 cursor-pointer hover:border-emerald-300 hover:bg-emerald-50/50 transition-all text-xs font-semibold text-slate-600">
+                    <Upload size={14} className="text-slate-400" />
+                    Choose File to Upload
+                    <input type="file" className="hidden" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={handleFileUpload} disabled={uploadState.status === 'uploading'} />
+                  </label>
+                  <p className="text-[10px] text-slate-400 text-center">PDF, JPEG, PNG, or WebP · Max 10MB</p>
+                </div>
+
+                {uploadState.message && (
+                  <div className={`p-2 rounded text-xs ${uploadState.status === 'success' ? 'bg-green-50 text-green-700' : uploadState.status === 'error' ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}`}>
+                    {uploadState.message}
+                  </div>
+                )}
+
+                {uploadedFiles.length > 0 && (
+                  <div className="space-y-1 pt-2 border-t border-slate-100">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Uploaded Documents:</p>
+                    {uploadedFiles.map((name, idx) => (
+                      <div key={idx} className="flex items-center gap-2 text-xs text-slate-700 bg-slate-50 px-2 py-1 rounded">
+                        <FileCheck2 size={12} className="text-emerald-500 shrink-0" />
+                        <span className="truncate">{name}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Button Actions */}
+            <div className="flex flex-wrap gap-2 pt-1">
+              {submitted.uploadToken && !showUploader && (
+                <button
+                  type="button"
+                  onClick={() => setShowUploader(true)}
+                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-sm animate-fade-in"
+                >
+                  <Upload size={13} />
+                  I have documents to submit
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  resetSubmissionFlow();
+                  setMessages([]); // Clear chat history to start completely fresh
+                }}
+                className="px-3.5 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-bold rounded-lg transition-colors shadow-sm"
+              >
+                Add new case
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  resetSubmissionFlow();
+                  setMessages([
+                    {
+                      id: crypto.randomUUID(),
+                      role: 'assistant',
+                      content: `Thank you for using the digital assistant. We have successfully registered your case. Your MP, ${mpName}, and the volunteer case writers are now working on it.\n\nYou may close this window or return to the main portal.`,
+                      timestamp: new Date()
+                    }
+                  ]);
+                }}
+                className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition-colors shadow-sm"
+              >
+                End chat session
+              </button>
             </div>
           </div>
         </div>
@@ -308,11 +474,11 @@ export default function ChatClient({ mpName, constituency, division, constituenc
                   'My neighbour very noisy lah',
                 ].map(suggestion => (
                   <button
-                    key={suggestion}
-                    type="button"
-                    onClick={() => { setInput(suggestion); inputRef.current?.focus(); }}
-                    className="text-xs px-3 py-2 rounded-lg transition-all"
-                    style={{ background: 'var(--gov-surface)', border: '1px solid var(--gov-border)', color: 'var(--gov-text-secondary)' }}
+                     key={suggestion}
+                     type="button"
+                     onClick={() => { setInput(suggestion); inputRef.current?.focus(); }}
+                     className="text-xs px-3 py-2 rounded-lg transition-all"
+                     style={{ background: 'var(--gov-surface)', border: '1px solid var(--gov-border)', color: 'var(--gov-text-secondary)' }}
                   >
                     {suggestion}
                   </button>
@@ -351,7 +517,7 @@ export default function ChatClient({ mpName, constituency, division, constituenc
                     </div>
                   )}
 
-                  {/* Render markdown — bold, italic, lists render properly */}
+                  {/* Render markdown */}
                   <ChatMarkdown content={msg.content} />
 
                   {msg.isUrgent && (
@@ -391,49 +557,170 @@ export default function ChatClient({ mpName, constituency, division, constituenc
 
       {/* ── Submit Case CTA ────────────────────────────────── */}
       {showSubmit && !submitted && (
-        <div className="shrink-0 px-4 py-3 sm:px-6" style={{ borderTop: '1px solid var(--gov-border)', background: 'var(--gov-primary-50)' }}>
-          <div className="max-w-2xl mx-auto">
-            <div className="flex items-start gap-3">
-              <ShieldCheck size={18} className="shrink-0 mt-0.5" style={{ color: 'var(--gov-primary)' }} />
-              <div className="flex-1">
-                <p className="text-sm font-semibold text-slate-800">Ready to submit your case?</p>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Your conversation will be sent to the MP&apos;s office for follow-up.
-                </p>
-                <div className="flex flex-col sm:flex-row gap-2 mt-2.5">
-                  <input
-                    type="text"
-                    placeholder="Your name"
-                    value={submitName}
-                    onChange={e => setSubmitName(e.target.value)}
-                    maxLength={100}
-                    className="flex-1 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2"
-                    style={{ border: '1px solid var(--gov-border)', color: 'var(--gov-text)' }}
-                  />
-                  <input
-                    type="tel"
-                    placeholder="Phone (optional)"
-                    value={submitPhone}
-                    onChange={e => setSubmitPhone(e.target.value)}
-                    maxLength={20}
-                    className="sm:w-40 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2"
-                    style={{ border: '1px solid var(--gov-border)', color: 'var(--gov-text)' }}
-                  />
-                  <button
-                    type="button"
-                    onClick={handleSubmitCase}
-                    disabled={submitting || !submitName.trim()}
-                    className="px-4 py-2 disabled:opacity-50 text-white text-sm font-semibold rounded-lg transition-colors flex items-center gap-1.5"
-                    style={{ background: 'var(--gov-primary)' }}
-                  >
-                    {submitting ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-                    {submitting ? 'Submitting…' : 'Submit Case'}
-                  </button>
+        <>
+          {!factReviewActive ? (
+            <div className="shrink-0 px-4 py-3 sm:px-6" style={{ borderTop: '1px solid var(--gov-border)', background: 'var(--gov-primary-50)' }}>
+              <div className="max-w-2xl mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <ShieldCheck size={18} className="shrink-0 mt-0.5" style={{ color: 'var(--gov-primary)' }} />
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800">We have enough details to process your case.</p>
+                    <p className="text-xs text-slate-500 mt-0.5">Please review the extracted facts before submitting to the MP pipeline.</p>
+                  </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setFactReviewActive(true);
+                    setLoadingFacts(true);
+                    const result = await generateFactDraft(messages.map(m => ({ role: m.role, content: m.content })));
+                    setLoadingFacts(false);
+                    if (result) {
+                      setFactDraft(result);
+                    } else {
+                      setFactDraft({
+                        category: 'General Inquiry',
+                        urgency: 'Medium',
+                        summary: 'Reviewing constituency appeal details.',
+                        coreRequest: 'Constituency support and assistance.',
+                        keyFacts: messages.filter(m => m.role === 'user').slice(0, 3).map(m => m.content),
+                        suggestedAgencies: ['General Welfare'],
+                      });
+                    }
+                  }}
+                  className="w-full sm:w-auto px-4 py-2 text-white text-sm font-semibold rounded-lg transition-colors shadow-sm shrink-0 flex items-center justify-center"
+                  style={{ background: 'var(--gov-primary)' }}
+                >
+                  Review & Submit Case
+                </button>
               </div>
             </div>
-          </div>
-        </div>
+          ) : (
+            <div className="shrink-0 max-h-[50dvh] overflow-y-auto px-4 py-4 sm:px-6 bg-slate-50 border-t border-slate-200" style={{ borderTop: '1px solid var(--gov-border)' }}>
+              <div className="max-w-2xl mx-auto space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold flex items-center gap-2 text-slate-800">
+                    <ShieldCheck size={16} className="text-emerald-600" />
+                    Fact-Finding & Case Review
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => setFactReviewActive(false)}
+                    className="text-xs font-semibold text-slate-500 hover:text-slate-700 transition-colors"
+                  >
+                    Go back to chat
+                  </button>
+                </div>
+
+                {loadingFacts ? (
+                  <div className="flex flex-col items-center py-8 space-y-3">
+                    <Loader2 size={24} className="animate-spin text-slate-400" />
+                    <p className="text-xs text-slate-500 font-medium">Analyzing case context for fact-finding...</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Summary */}
+                    {factDraft && (
+                      <div className="bg-white p-3.5 rounded-lg border border-slate-100 shadow-sm space-y-1.5">
+                        <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Proposed Case Summary</h4>
+                        <p className="text-xs text-slate-700 font-medium leading-relaxed">{factDraft.summary}</p>
+                      </div>
+                    )}
+
+                    {/* Key Facts */}
+                    {factDraft && factDraft.keyFacts.length > 0 && (
+                      <div className="space-y-1.5">
+                        <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">AI-Extracted Facts</h4>
+                        <div className="space-y-1.5">
+                          {factDraft.keyFacts.map((fact, idx) => (
+                            <div key={idx} className="bg-white p-2.5 rounded-lg border border-slate-100 flex items-start gap-2.5 text-xs text-slate-700 font-medium leading-normal">
+                              <CheckCircle2 size={14} className="text-emerald-500 mt-0.5 shrink-0" />
+                              <span>{fact}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Meta Section */}
+                    {factDraft && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="bg-white p-3 rounded-lg border border-slate-100 space-y-1.5">
+                          <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Agencies Involved</h4>
+                          <div className="flex flex-wrap gap-1.5">
+                            {factDraft.suggestedAgencies.map((agency, idx) => (
+                              <span key={idx} className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded-md font-bold text-[10px]">
+                                {agency}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="bg-white p-3 rounded-lg border border-slate-100 space-y-1.5">
+                          <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Category / Priority</h4>
+                          <div className="flex flex-wrap gap-1.5">
+                            <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded-md font-bold text-[10px] uppercase">
+                              {factDraft.category}
+                            </span>
+                            <span className="px-2 py-0.5 rounded-md font-bold text-[10px] uppercase text-white bg-red-600">
+                              {factDraft.urgency} Priority
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* PDPA Consent Gate & Inputs */}
+                    <div className="bg-white p-4 rounded-lg border border-slate-200 space-y-4">
+                      <label className="flex items-start gap-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={consentApproved}
+                          onChange={e => setConsentApproved(e.target.checked)}
+                          className="mt-0.5 h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                        />
+                        <span className="text-xs text-slate-700 font-semibold leading-relaxed">
+                          I formally approve these fact-finding details as correct and authorize the MP&apos;s office to submit my case into the processing pipeline.
+                        </span>
+                      </label>
+
+                      <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                        <input
+                          type="text"
+                          placeholder="Your name (as in NRIC)"
+                          value={submitName}
+                          onChange={e => setSubmitName(e.target.value)}
+                          maxLength={100}
+                          className="flex-1 px-3 py-2 rounded-lg text-xs focus:outline-none focus:ring-2"
+                          style={{ border: '1px solid var(--gov-border)', color: 'var(--gov-text)' }}
+                        />
+                        <input
+                          type="tel"
+                          placeholder="Phone number"
+                          value={submitPhone}
+                          onChange={e => setSubmitPhone(e.target.value)}
+                          maxLength={20}
+                          className="sm:w-48 px-3 py-2 rounded-lg text-xs focus:outline-none focus:ring-2"
+                          style={{ border: '1px solid var(--gov-border)', color: 'var(--gov-text)' }}
+                        />
+                        <button
+                          type="button"
+                          onClick={handleSubmitCase}
+                          disabled={submitting || !consentApproved || !submitName.trim()}
+                          className="px-5 py-2 disabled:opacity-50 text-white text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 shrink-0"
+                          style={{ background: 'var(--gov-primary)' }}
+                        >
+                          {submitting ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                          {submitting ? 'Submitting…' : 'Confirm & Submit'}
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {/* ── Error display ──────────────────────────────────── */}
@@ -468,7 +755,7 @@ export default function ChatClient({ mpName, constituency, division, constituenc
               disabled={isPending}
               className="w-11 h-11 rounded-lg disabled:opacity-50
                          flex items-center justify-center transition-colors shrink-0"
-              style={{ background: 'var(--gov-primary)' }}
+               style={{ background: 'var(--gov-primary)' }}
               aria-label="Send message"
             >
               {isPending ? (

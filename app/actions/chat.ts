@@ -13,12 +13,14 @@ const AI_PROXY = process.env.AI_PROXY_URL || 'http://mps-ai-proxy:3103';
 interface ChatResponse {
   response: string;
   isUrgent: boolean;
+  readyToSubmit?: boolean;
   error?: string;
 }
 
 interface SubmitCaseResult {
   success: boolean;
   caseNumber?: string;
+  uploadToken?: string;
   message: string;
 }
 
@@ -66,6 +68,7 @@ export async function sendMessage(input: {
     return {
       response: data.response || '',
       isUrgent: data.isUrgent || false,
+      readyToSubmit: data.readyToSubmit || false,
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error';
@@ -81,13 +84,47 @@ export async function sendMessage(input: {
  * Calls the categorise endpoint to auto-triage, then inserts into PostgreSQL.
  * No authentication — case enters the pipeline with status 'new'.
  */
+export async function generateFactDraft(conversation: Array<{ role: string; content: string }>) {
+  try {
+    const catResp = await fetch(`${AI_PROXY}/api/ai/categorize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ conversation }),
+      signal: AbortSignal.timeout(30_000),
+    });
+
+    if (!catResp.ok) return null;
+    return await catResp.json();
+  } catch (err) {
+    console.error('[generateFactDraft] Error:', err);
+    return null;
+  }
+}
+
 export async function submitCase(input: {
   conversation: Array<{ role: string; content: string }>;
   residentName: string;
   phone?: string;
   constituencyId: number;
+  category?: string;
+  urgency?: string;
+  summary?: string;
+  coreRequest?: string;
+  keyFacts?: string[];
+  suggestedAgencies?: string[];
 }): Promise<SubmitCaseResult> {
-  const { conversation, residentName, phone, constituencyId } = input;
+  const {
+    conversation,
+    residentName,
+    phone,
+    constituencyId,
+    category: inputCategory,
+    urgency: inputUrgency,
+    summary: inputSummary,
+    coreRequest: inputCoreRequest,
+    keyFacts: inputKeyFacts,
+    suggestedAgencies: inputSuggestedAgencies,
+  } = input;
 
   // Validate
   if (!residentName || residentName.trim().length < 2) {
@@ -101,34 +138,35 @@ export async function submitCase(input: {
   const safePhone = phone ? phone.trim().slice(0, 20).replace(/[^0-9+\-\s]/g, '') : null;
 
   try {
-    // Step 1: Categorise via AI proxy
-    let category = 'Other';
-    let urgency = 'Medium';
-    let summary = '';
-    let coreRequest = '';
-    let keyFacts: string[] = [];
-    let suggestedAgencies: string[] = [];
+    // Step 1: Categorise via AI proxy or use pre-approved inputs
+    let category = inputCategory || 'Other';
+    let urgency = inputUrgency || 'Medium';
+    let summary = inputSummary || '';
+    let coreRequest = inputCoreRequest || '';
+    let keyFacts: string[] = inputKeyFacts || [];
+    let suggestedAgencies: string[] = inputSuggestedAgencies || [];
 
-    try {
-      const catResp = await fetch(`${AI_PROXY}/api/ai/categorize`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ conversation }),
-        signal: AbortSignal.timeout(65_000),
-      });
+    if (!inputSummary) {
+      try {
+        const catResp = await fetch(`${AI_PROXY}/api/ai/categorize`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ conversation }),
+          signal: AbortSignal.timeout(30_000),
+        });
 
-      if (catResp.ok) {
-        const catData = await catResp.json();
-        category = catData.category || 'Other';
-        urgency = catData.urgency || 'Medium';
-        summary = catData.summary || '';
-        coreRequest = catData.coreRequest || '';
-        keyFacts = catData.keyFacts || [];
-        suggestedAgencies = catData.suggestedAgencies || [];
+        if (catResp.ok) {
+          const catData = await catResp.json();
+          category = catData.category || 'Other';
+          urgency = catData.urgency || 'Medium';
+          summary = catData.summary || '';
+          coreRequest = catData.coreRequest || '';
+          keyFacts = catData.keyFacts || [];
+          suggestedAgencies = catData.suggestedAgencies || [];
+        }
+      } catch {
+        // Categorisation failed — proceed with defaults.
       }
-    } catch {
-      // Categorisation failed — proceed with defaults.
-      // The case will still be created for staff to triage manually.
     }
 
     // Step 2: Insert case into PostgreSQL (parameterised query — no SQL injection)
@@ -166,9 +204,56 @@ export async function submitCase(input: {
       [caseRow.id, JSON.stringify({ source: 'chat', category, urgency })]
     );
 
+    // Step 4: Enqueue full Causality Engine pipeline (async, fire-and-forget)
+    // This runs the 3-stage pipeline in the background so that when staff
+    // open the case, the causal graph + letters + doc requirements are ready.
+    // Look up MP name for letter context.
+    try {
+      const constRow = await dbOne<{ mp_name: string; name: string }>(
+        'SELECT mp_name, name FROM constituencies WHERE id = $1',
+        [constituencyId]
+      );
+      const transcript = conversation
+        .map(m => `[${m.role.toUpperCase()}]: ${m.content}`)
+        .join('\n');
+
+      // Fire-and-forget — do not await the full pipeline
+      fetch(`${AI_PROXY}/api/ai/causality/enqueue`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          caseId: caseRow.id,
+          transcript,
+          mpName: constRow?.mp_name || '',
+          constituency: constRow?.name || '',
+        }),
+        signal: AbortSignal.timeout(10_000),
+      }).catch(err => {
+        console.error('[submitCase] Causality enqueue failed (non-blocking):', err instanceof Error ? err.message : err);
+      });
+    } catch {
+      // Causality enqueue failure must never block case submission
+      console.error('[submitCase] Failed to prepare causality enqueue (non-blocking)');
+    }
+
+    // Step 5: Generate a public upload token for this case to allow document uploads
+    let uploadToken: string | null = null;
+    try {
+      const tokenRow = await dbOne<{ token: string }>(
+        `INSERT INTO upload_tokens (case_id, created_by)
+         VALUES ($1, NULL)
+         RETURNING token::text`,
+        [caseRow.id]
+      );
+      uploadToken = tokenRow?.token || null;
+    } catch (err) {
+      console.error('[submitCase] Failed to create upload token:', err);
+    }
+
     return {
       success: true,
       caseNumber: caseRow.case_number || `MPS-${String(caseRow.id).padStart(4, '0')}`,
+      uploadToken: uploadToken || undefined,
       message: `Your case (${caseRow.case_number || caseRow.id}) has been submitted. The MP's office will follow up.`,
     };
   } catch (err) {

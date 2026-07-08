@@ -23,7 +23,7 @@ function isRateLimited(ip: string): boolean {
 }
 
 // Routes that do NOT require auth
-const PUBLIC_PATHS = ['/login', '/chat', '/upload', '/auth/demo', '/api/auth/login', '/api/health', '/api/postal-lookup', '/enter-postal-code'];
+const PUBLIC_PATHS = ['/login', '/chat', '/upload', '/auth/demo', '/api/auth/login', '/api/health', '/api/postal-lookup', '/api/audio', '/enter-postal-code'];
 
 export async function middleware(req: NextRequest) {
   // Rate limiting check

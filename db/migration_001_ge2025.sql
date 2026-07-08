@@ -10,10 +10,7 @@ BEGIN;
 ALTER TABLE constituencies ADD COLUMN IF NOT EXISTS party VARCHAR(10);
 ALTER TABLE constituencies ADD COLUMN IF NOT EXISTS type  VARCHAR(5);
 
--- ── 2. Clean slate — remove duplicated seed rows ──────────────
--- CASCADE will clear FK-dependent rows in cases, users, etc.
--- For a fresh demo this is acceptable; production would migrate.
-TRUNCATE constituencies CASCADE;
+-- TRUNCATE constituencies CASCADE; -- disabled to prevent wiping cases on compose restarts
 
 -- ── 3. Insert all 97 MPs (one row per MP per division) ────────
 -- GRCs: each MP has their own division (ward)
@@ -153,7 +150,8 @@ INSERT INTO constituencies (name, division, mp_name, party, type, branch_locatio
 ('Radin Mas SMC',        'Radin Mas',        'Melvin Yong',       'PAP', 'SMC', NULL, NULL),
 ('Sembawang West SMC',   'Sembawang West',   'Poh Li San',        'PAP', 'SMC', NULL, NULL),
 ('Tampines Changkat SMC','Tampines Changkat', 'Desmond Choo',      'PAP', 'SMC', NULL, NULL),
-('Yio Chu Kang SMC',     'Yio Chu Kang',     'Yip Hon Weng',      'PAP', 'SMC', NULL, NULL);
+('Yio Chu Kang SMC',     'Yio Chu Kang',     'Yip Hon Weng',      'PAP', 'SMC', NULL, NULL)
+ON CONFLICT (name, division) DO NOTHING;
 
 -- ── 4. Postal sector → constituency mapping ──────────────────
 -- First 2 digits of postal code → approximate constituency

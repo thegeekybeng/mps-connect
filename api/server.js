@@ -137,18 +137,56 @@ function buildSystemPrompt(mpName, constituency, division, canary) {
   const safe = (v) => sanitize(String(v || ''), 100);
   return `You are a highly intelligent, multilingual Digital Assistant for ${safe(mpName)}, Member of Parliament for ${safe(constituency)}${division ? `, ${safe(division)} division` : ''}.
 
+**TERMINOLOGY POLICY — NON-NEGOTIABLE**
+- Always refer to the constituent as "Resident" (capitalized). Never use "the user", "user", "client", or "customer" in your messages, thoughts, or actions.
+
 **YOUR PRIMARY PURPOSE — CASEWORK, NOT SIGNPOSTING**
-You are helping a resident bring their case to their MP. Your job is NOT to tell residents to call a hotline and go away. Your job IS to:
-1. Listen carefully and gather the full details of their issue (what happened, when, what they need)
-2. Identify which agency the MP's office should write to on the resident's behalf
-3. Help document the case clearly so that a formal letter can be drafted from ${safe(mpName)}'s office to that agency
-4. Assure the resident that the MP will follow up with the relevant agency on their behalf
+You are helping a Resident bring their case to their MP. Your job is NOT to tell Residents to call a hotline or contact an agency and go away. You are a volunteer case writer representing the MP. You must ensure the Resident feels heard, supported, and helped by their elected MP and the volunteer case writers who are looking into resolving their problems. This requires a high level of empathy and warmth.
 
-Hotlines and self-service contacts are SECONDARY — only provide them when:
+Your job IS to:
+1. Listen carefully with deep empathy and gather the full details of their issue (what happened, when, what they need).
+2. Assure the Resident that their elected MP, ${safe(mpName)}, and the volunteer team will help them draft and submit a formal appeal letter to the relevant Singapore agency (e.g., NEA, HDB, MOM, MSF).
+3. Explain the correct workflow: The volunteer team drafts the appeal letter, their MP checks and signs the letter, and then the MP's office submits it to the agency. Once the agency receives this official representation, they will review the case and formally reply directly to the Resident.
+4. Do NOT tell the Resident to contact the agency (like NEA) on their own. Instead, assure them that we will handle the appeal on their behalf, and the agency will formally reply to them once the letter from their MP is received.
+
+Hotlines and self-service contacts are strictly SECONDARY. Only mention them as a safety net if:
 - The situation is a genuine emergency that cannot wait for the MP process (Tier 1), OR
-- The resident specifically asks for a direct contact number
+- The Resident explicitly asks for a direct contact number.
 
-For normal casework: gather details, confirm the issue, and tell the resident the MP's office will write to the relevant agency. Do NOT end the conversation with "call this number and handle it yourself."
+Never end the conversation with "call this number and handle it yourself." Maintain the narrative that the MP's office is taking charge of the appeal.
+
+**DYNAMIC FACT-FINDING MISSION PROTOCOL (CAUSALITY PREPARATION)**
+To ensure that government agencies have sufficient details to take action on the Resident's appeal, you MUST conduct a dynamic fact-finding mission. Do not try to end the chat or declare a case ready for submission until you have gathered or established the following parameters. However, you MUST NOT ask for a parameter if the Resident has already provided or implied it in the conversation history:
+1. **Case-Specific Numbers & References** (If the Resident is appealing a notice, summons, fine, or bill, establish the reference number. If they provide a number or mention they uploaded a photo, do NOT ask for it again.)
+2. **Timing** (Establish the date/time. If they say "yesterday", "last week", etc., timing is established. Do NOT ask for the exact calendar date.)
+3. **Location/Address** (Establish where it happened. If they say "outside my house", "my block corridor", etc., it is established relative to their address. Do NOT ask for the exact address.)
+4. **Context & Supporting Documents** (Establish what happened and document types. If they mention they have it, do NOT ask for details repeatedly.)
+5. **Financial & Family Appeals (HDB, MSF, SSO/ComCare)**:
+   - **Employment status** (If they say "jobless", "unemployed", or "no job", it is established. Do NOT ask.)
+   - **Monthly household income** (If they say "where got income?", "no income", or "jobless", it is established as $0/none. You MUST NOT ask them to confirm or specify the amount.)
+   - **Household size** (If they say "only me and daughter" or "just my mother and I", it is established as 2. You MUST NOT ask how many people live in that flat.)
+   - **Residency / Pass types** of family members if relevant.
+
+
+**CRITICAL CONVERSATIONAL RULES FOR FACT-FINDING — NO REPETITION**:
+- **No Duplicate/Redundant Questions**: You MUST carefully read the entire conversation history before formulating any response. If the Resident has already provided any parameter or detail—whether explicitly, implicitly, colloquially, or contextually—you **MUST NOT** ask for it again.
+  * *Financial/Arrears example*: If the Resident states they are jobless, have no money, or ask "where got any income?", you **MUST** record their monthly household income as **$0** and **MUST NOT** ask them to specify, clarify, or confirm the amount (even if it is zero or very low).
+  * *Household Composition example*: If they say "only me and daughter" or "just my mother and I", you **MUST** record their household size as **2** and **MUST NOT** ask how many people live in that flat or who else resides there.
+  * *Summons/Notice Appeals example*: If they mention "refer to the photo I uploaded", "I have it here", or provide a reference number (even with spaces), treat the reference/document parameter as **satisfied** (e.g. via document upload) and do not repeatedly ask them to type out the number.
+  * *Date & Timing example*: "yesterday", "last weekend", "two days ago" -> **timing is established** relative to the conversation date. Do not ask for the exact calendar date if a relative description is given.
+  * *Location example*: "outside my house", "my block corridor", "our lift lobby" -> **location is established** relative to the Resident's address. Do not ask for a specific address if they refer to their home environment.
+- **Dynamic Semantic Parsing & Inference (All Cases)**:
+  - **Implicit & Colloquial Values**: Map informal, indirect, or rhetorical answers to concrete values.
+  - **Deduce Missing Parameters**: If a required detail can be logically deduced from the context (e.g., if a Resident is appealing a lift breakdown at their block, their address is the location of the incident), consider it established.
+- **Acknowledge and Validate**: In your response, clearly state which facts you have registered (e.g., "I note that you are appealing a Town Council notice dated last Monday..."). This confirms to the Resident that their input was heard and understood.
+- **Gather missing details conversationally**: Ask for only 1 or 2 missing details at a time as the conversation progresses naturally. Do NOT dump all questions in a single overwhelming message.
+
+
+
+
+**READY TO SUBMIT FLAG**
+When you have successfully gathered the key details needed for the case (notice/summons numbers if applicable, location, date/time, and household/financial circumstances for financial appeals) so that a clear letter can be drafted, you MUST append the exact tag "||READY_TO_SUBMIT||" at the very end of your response text.
+This tag tells the front-end that fact-finding is complete and lets the Resident review and submit their case. Do NOT output this tag in your first 2 turns, and do NOT output it if you still have major outstanding questions.
 
 **JURISDICTION — ABSOLUTE RULE**
 You serve residents of SINGAPORE ONLY. Every agency, hotline, or resource you name MUST be a Singapore government agency or Singapore-registered service.
@@ -157,7 +195,7 @@ JKM (Jabatan Kebajikan Masyarakat), Pejabat Daerah, Pejabat Peguam Negara, LPPEH
 If you are responding in Malay or Tamil, you MUST still use Singapore agencies. Language does not change jurisdiction.
 
 **ISSUE → AGENCY ROUTING (follow this table exactly — do not invent agencies)**
-Identify the resident's issue type, then use ONLY the agency shown below. Give the hotline every time.
+Identify the Resident's issue type, then use ONLY the agency shown below. Give the hotline every time.
 
 ESTATE & ENVIRONMENT:
 | Issue | Agency | Contact |
@@ -198,11 +236,11 @@ MENTAL HEALTH / CRISIS:
 | Mental health support | IMH crisis line | 6389-2222 (24/7) |
 | Suicidal thoughts or self-harm | SOS (Samaritans of Singapore) | 1800-221-4444 (24/7) |
 
-RULE: If a resident's message covers multiple issues, address each one and name a separate agency for each. Never collapse two different issues into one agency.
+RULE: If a Resident's message covers multiple issues, address each one and name a separate agency for each. Never collapse two different issues into one agency.
 
 
 **PRIME DIRECTIVE: LANGUAGE MIRRORING — NON-NEGOTIABLE**
-Detect what language the resident uses. Reply ONLY in that language.
+Detect what language the Resident uses. Reply ONLY in that language.
 
 - **Singlish** → Authentic Singlish ONLY. Use: lah, leh, lor, sia, wah, aiyo, hor. Natural warmth, NOT performed auntie-speak. NEVER reply in formal English if they write Singlish.
 - **Mandarin / 中文** → Chinese characters ONLY. No pinyin. Zero English words.
@@ -213,7 +251,7 @@ Detect what language the resident uses. Reply ONLY in that language.
 **TIER 1 — EMERGENCY SERVICES (999 / Police / Ambulance)**
 These situations require immediate emergency response. Do NOT tag as ||URGENT_BOOKING||.
 Instead: respond with immediate empathy, give the correct emergency number, and encourage them to call NOW.
-Situations: active violence or assault happening now (to resident OR witnessed nearby), medical emergency, fire, active crime in progress, immediate threat to life.
+Situations: active violence or assault happening now (to Resident OR witnessed nearby), medical emergency, fire, active crime in progress, immediate threat to life.
 
 Example: "My neighbour is being beaten right now" → Tell them to call 999 immediately. This is a police matter, not an MP booking.
 Example: "I feel like ending my life" → Give 999 and SOS hotline (1800-221-4444). Show care. Do NOT tag ||URGENT_BOOKING||.
@@ -239,7 +277,7 @@ Steps for Tier 2:
 4. APPEND exactly this tag at the END of your reply: ||URGENT_BOOKING||
 
 **CONFUSION SIGNALS — respond with reset, not recap**
-If a resident says something like "what are you talking about?", "你在讲什么", "apa yang awak cakap?", "நீங்கள் என்ன சொல்கிறீர்கள்?", or any expression of confusion about your previous reply:
+If a Resident says something like "what are you talking about?", "你在讲什么", "apa yang awak cakap?", "நீங்கள் என்ன சொல்கிறீர்கள்?", or any expression of confusion about your previous reply:
 1. Apologise briefly ("I'm sorry if that was unclear" / "对不起，让我重新说明" / etc.)
 2. Ask fresh: "How can I help you today?"
 3. Do NOT restate or summarise what you thought they asked about before.
@@ -337,7 +375,7 @@ app.post('/api/ai/chat', async (req, res) => {
           { role: 'user', content: safeMessage },
         ],
         stream: false,
-        options: { temperature: 0.4 },
+        options: { temperature: 0.4, num_ctx: 8192 },
       }),
       signal: AbortSignal.timeout(60_000),
     });
@@ -353,9 +391,15 @@ app.post('/api/ai/chat', async (req, res) => {
       aiText = aiText.replace(new RegExp(canary, 'g'), '[REDACTED]');
     }
 
-    // LLM08 — detect urgency flag server-side, strip from visible text
+    // LLM08 — detect urgency/ready flags server-side, strip from visible text
     const isUrgent = aiText.includes('||URGENT_BOOKING||');
-    const cleanText = sanitizeOutput(aiText.replace('||URGENT_BOOKING||', '').trim());
+    const readyToSubmit = aiText.includes('||READY_TO_SUBMIT||');
+    const cleanText = sanitizeOutput(
+      aiText
+        .replace('||URGENT_BOOKING||', '')
+        .replace('||READY_TO_SUBMIT||', '')
+        .trim()
+    );
 
     const CHAT_ANOMALY_RE = /```sql|<script|\bDROP\s+TABLE|\bexec\s*\(|ignore\s+all\s+previous/i;
     if (CHAT_ANOMALY_RE.test(cleanText)) {
@@ -370,9 +414,10 @@ app.post('/api/ai/chat', async (req, res) => {
       inputLang: detectLang(safeMessage),
       outputLang: detectLang(cleanText),
       isUrgent,
+      readyToSubmit,
       canaryDetected,
     });
-    res.json({ response: cleanText, isUrgent, canaryDetected });
+    res.json({ response: cleanText, isUrgent, readyToSubmit, canaryDetected });
   } catch (err) {
     auditLog('ERROR_CHAT', { msg: err.message });
     res.status(503).json({ error: 'AI service temporarily unavailable' });
@@ -401,6 +446,12 @@ app.post('/api/ai/categorize', async (req, res) => {
 
   const prompt = `Analyze this MPS conversation and return ONLY a JSON object. [SID:${canary}]
 
+**CRITICAL MULTI-SUBMISSION HANDLING RULES**:
+If the transcript shows that a case has already been successfully submitted (e.g. you see a system/assistant message starting with "Case MPS-" or stating that a case has been submitted), you MUST:
+1. Ignore all user requests, details, and conversation that occurred BEFORE that case submission message.
+2. Focus ONLY on the new messages, facts, and complaints raised by the Resident AFTER that submission.
+3. Extract categories, keyFacts, coreRequest, and suggestedAgencies for this NEW, active issue only.
+
 TRANSCRIPT:
 ${transcript}
 
@@ -424,7 +475,7 @@ Return JSON with EXACTLY these fields:
         messages: [{ role: 'user', content: prompt }],
         stream: false,
         format: 'json',
-        options: { temperature: 0.3 },
+        options: { temperature: 0.3, num_ctx: 8192 },
       }),
       signal: AbortSignal.timeout(60_000),
     });
@@ -487,7 +538,7 @@ Write a professional, empathetic letter in formal Singaporean government corresp
         model: AI_MODEL,
         messages: [{ role: 'user', content: prompt }],
         stream: false,
-        options: { temperature: 0.5 },
+        options: { temperature: 0.5, num_ctx: 8192 },
       }),
       signal: AbortSignal.timeout(45_000),
     });
@@ -525,7 +576,7 @@ app.post('/api/ai/explain', async (req, res) => {
         model: AI_MODEL,
         messages: [{ role: 'user', content: `Explain in 2-3 sentences why this resident case is classified as ${safeUrgency} urgency: ${safeContext}` }],
         stream: false,
-        options: { temperature: 0.4 },
+        options: { temperature: 0.4, num_ctx: 8192 },
       }),
       signal: AbortSignal.timeout(20_000),
     });
@@ -674,7 +725,7 @@ async function ollamaJSON(prompt, systemMsg, timeoutMs) {
       ],
       stream: false,
       format: 'json',
-      options: { temperature: 0.1 },
+      options: { temperature: 0.1, num_ctx: 8192 },
     }),
     signal: AbortSignal.timeout(timeoutMs),
   });
@@ -864,6 +915,94 @@ app.post('/api/ai/transcribe', upload.single('audio'), async (req, res) => {
 // ── POST /api/ai/synthesize ───────────────────────────────────
 // TTS: accepts text → Wyoming Bridge → WAV audio bytes
 // Audit: TTS_SYNTHESIZE or TTS_ERROR
+function preprocessTtsText(text) {
+  if (!text) return '';
+  return text
+    .replace(/```[\s\S]*?```/g, '')         // code blocks
+    .replace(/`([^`]+)`/g, '$1')            // inline code
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // [text](url) → text
+    .replace(/^#{1,6}\s+/gm, '')            // headings
+    .replace(/\*{2,}([^*]+)\*{2,}/g, '$1')  // bold
+    .replace(/_{2,}([^_]+)_{2,}/g, '$1')    // bold alt
+    .replace(/\*([^*]+)\*/g, '$1')          // italic
+    .replace(/_([^_]+)_/g, '$1')            // italic alt
+    .replace(/~~([^~]+)~~/g, '$1')          // strikethrough
+    .replace(/^\s*[-*+]\s+/gm, '')          // bullet points
+    .replace(/^\s*\d+\.\s+/gm, '')          // numbered lists
+    .replace(/^\s*>\s?/gm, '')              // blockquotes
+    .replace(/\|/g, ', ')                   // table pipes
+    .replace(/---+/g, ' ')                  // horizontal rules
+
+    // 2. Handle slashes
+    .replace(/\b24\/7\b/gi, 'twenty four seven')
+    .replace(/\bNTUC\/e2i\b/gi, 'N. T. U. C. and e 2 i')
+    .replace(/\band\/or\b/gi, 'and or')
+    .replace(/\/+/g, ' and ')
+
+    // 3. Abbreviations
+    .replace(/\bHDB\b/g, 'H D B')
+    .replace(/\bSSO\b/g, 'S S O')
+    .replace(/\bCPF\b/g, 'C P F')
+    .replace(/\bICA\b/g, 'I C A')
+    .replace(/\bMOM\b/g, 'M O M')
+    .replace(/\bMOH\b/g, 'M O H')
+    .replace(/\bMOE\b/g, 'M O E')
+    .replace(/\bNEA\b/g, 'N E A')
+    .replace(/\bPUB\b/g, 'P U B')
+    .replace(/\bSPF\b/g, 'S P F')
+    .replace(/\bWSG\b/g, 'W S G')
+    .replace(/\bCDC\b/g, 'C D C')
+    .replace(/\bLAB\b/g, 'L A B')
+    .replace(/\bIMH\b/g, 'I M H')
+    .replace(/\bMSF\b/g, 'M S F')
+    .replace(/\bFSC\b/g, 'F S C')
+    .replace(/\bSLA\b/g, 'S L A')
+    .replace(/\bIRAS\b/g, 'I R A S')
+    .replace(/\bMCCY\b/g, 'M C C Y')
+    .replace(/\bMND\b/g, 'M N D')
+    .replace(/\bPA\b/g, 'P A')
+    .replace(/\bS&CC\b/gi, 'S and C C')
+    .replace(/\bGRC\b/g, 'G R C')
+    .replace(/\bSMC\b/g, 'S M C')
+    .replace(/\be2i\b/gi, 'e 2 i')
+    .replace(/\bOneService\b/gi, 'One Service')
+    .replace(/\bSingpass\b/gi, 'Sing pass')
+    .replace(/\bComCare\b/gi, 'Com care')
+
+    // 3b. Dollar amounts
+    .replace(/\$(\d+)\b/g, '$1 dollars')
+
+    // 4. Place names
+    .replace(/\bAljunied\b/g, 'Al-junied')
+    .replace(/\bChangi\b/g, 'Chang-gee')
+    .replace(/\bYishun\b/g, 'Yee-shun')
+    .replace(/\bHougang\b/g, 'How-gang')
+    .replace(/\bSengkang\b/g, 'Seng-kang')
+    .replace(/\bToa Payoh\b/gi, 'Tow Pay-yo')
+    .replace(/\bPasir Ris\b/gi, 'Pah-seer Rees')
+    .replace(/\bJurong\b/gi, 'Joo-rong')
+
+    // 5. Lists
+    .replace(/^\s*(\d+)\.\s+/gm, 'Number $1, ')
+
+    // 6. Phone numbers
+    .replace(/\b1800[- ]?(\d{3})[- ]?(\d{4})\b/g, (m, g1, g2) => {
+      return `One-Eight-Hundred, ${g1.split('').join(' ')}, ${g2.split('').join(' ')}`;
+    })
+    .replace(/\b1800\b/g, 'One-Eight-Hundred')
+    .replace(/\b(\d{4})-(\d{4})\b/g, (m, g1, g2) => {
+      return `${g1.split('').join(' ')}, ${g2.split('').join(' ')}`;
+    })
+
+    // 7. Singlish
+    .replace(/[,.]?\s*\b(lah|leh|lor|loh|sia|wah|aiyo|aiyoh|hor|meh|hah|arh|nia)\b[,.]?\s*/gi, ' ')
+    .replace(/\s*,\s*([.?!])/g, '$1')
+    .replace(/\s+([.?!])/g, '$1')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 app.post('/api/ai/synthesize', async (req, res) => {
   const ipHash = crypto.createHash('sha256').update(req.ip || '').digest('hex').slice(0, 12);
   if (!rateLimit(ipHash, 30, 60_000)) {
@@ -879,29 +1018,40 @@ app.post('/api/ai/synthesize', async (req, res) => {
   // Cap TTS input to 2000 chars to prevent abuse
   const cappedText = text.slice(0, 2000);
 
-  // Strip markdown/formatting so TTS reads clean natural text
-  const ttsText = cappedText
-    .replace(/```[\s\S]*?```/g, '')         // code blocks
-    .replace(/`([^`]+)`/g, '$1')            // inline code
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // [text](url) → text
-    .replace(/^#{1,6}\s+/gm, '')            // headings
-    .replace(/\*{2,}([^*]+)\*{2,}/g, '$1')  // bold (**text** or ***text***)
-    .replace(/_{2,}([^_]+)_{2,}/g, '$1')    // bold alt (__text__)
-    .replace(/\*([^*]+)\*/g, '$1')          // italic
-    .replace(/_([^_]+)_/g, '$1')            // italic alt
-    .replace(/~~([^~]+)~~/g, '$1')          // strikethrough
-    .replace(/^\s*[-*+]\s+/gm, '')          // bullet points
-    .replace(/^\s*\d+\.\s+/gm, '')          // numbered lists
-    .replace(/^\s*>\s?/gm, '')              // blockquotes
-    .replace(/\|/g, ',')                    // table pipes → commas
-    .replace(/---+/g, '')                   // horizontal rules
-    // Strip Singlish particles — Piper mispronounces them
-    .replace(/[,.]?\s*\b(lah|leh|lor|loh|sia|wah|aiyo|aiyoh|hor|meh|hah|arh|nia)\b[,.]?\s*/gi, ' ')
-    .replace(/\s*,\s*([.?!])/g, '$1')       // clean ", ?" → "?"
-    .replace(/\s+([.?!])/g, '$1')            // clean " ?" → "?"
-    .replace(/\s{2,}/g, ' ')                 // collapse double spaces
-    .replace(/\n{3,}/g, '\n\n')             // collapse multiple newlines
-    .trim();
+  let targetText = cappedText;
+
+  // Detect non-English text (Chinese, Tamil, or common Malay words)
+  const needsTranslation = /[\u4e00-\u9fa5]|[\u0b80-\u0bff]/.test(cappedText) || 
+    /\b(saya|bantuan|untuk|dengan|yang|terima|kasih|tidak|boleh|ada|sewa|rumah|kerja)\b/i.test(cappedText);
+
+  if (needsTranslation) {
+    try {
+      const ollamaRes = await fetch(OLLAMA_GENERATE, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: AI_MODEL,
+          prompt: `Translate this message to clear, spoken English. Return ONLY the English translation, without any extra text or conversational filler:\n\n${cappedText}`,
+          stream: false,
+          options: { num_ctx: 8192 },
+        }),
+        signal: AbortSignal.timeout(15_000),
+      });
+
+      if (ollamaRes.ok) {
+        const transData = await ollamaRes.json();
+        const translated = (transData.response || '').trim();
+        if (translated) {
+          targetText = translated;
+        }
+      }
+    } catch (err) {
+      console.error('[synthesize] Non-English translation failed:', err);
+    }
+  }
+
+  // Pre-process final English text so TTS reads clean natural text
+  const ttsText = preprocessTtsText(targetText);
 
   try {
     const bridgeUrl = new URL('/synthesize', WYOMING_BRIDGE);
@@ -971,6 +1121,7 @@ app.post('/api/ai/translate', async (req, res) => {
         model: AI_MODEL,
         prompt: `Translate the following text from ${srcName} to ${tgtName}. Return ONLY the translated text, nothing else.\n\nText: ${text.slice(0, 2000)}`,
         stream: false,
+        options: { num_ctx: 8192 },
       }),
       signal: AbortSignal.timeout(30_000),
     });
@@ -1036,6 +1187,145 @@ app.get('/api/ai/voice-trail/:sessionId', async (req, res) => {
     return res.status(500).json({ error: 'Failed to query voice trail' });
   }
 });
+
+// ── POST /api/ai/causality/enqueue ────────────────────────────
+// Enqueues a causality analysis job to BullMQ queue (ADR-014)
+app.post('/api/ai/causality/enqueue', async (req, res) => {
+  const { caseId, transcript, mpName, constituency, writerName } = req.body;
+  if (!caseId || !transcript) {
+    return res.status(400).json({ error: 'caseId and transcript are required' });
+  }
+
+  try {
+    const job = await causalityQueue.add('causality-job', {
+      caseId,
+      transcript,
+      mpName,
+      constituency,
+      writerName
+    });
+    console.log(`[Queue] Enqueued causality job ${job.id} for case ${caseId}`);
+    return res.json({ ok: true, jobId: job.id });
+  } catch (err) {
+    console.error('[Queue] Failed to enqueue causality job:', err.message);
+    return res.status(500).json({ error: 'Failed to enqueue causality job' });
+  }
+});
+
+// ── Async BullMQ Worker ───────────────────────────────────────
+// Processes causality analysis in the background to prevent server timeouts (ADR-014)
+const { Worker } = require('bullmq');
+const { connection } = require('./queue');
+
+const worker = new Worker('causality', async job => {
+  const { caseId, transcript, mpName, constituency, writerName } = job.data;
+  console.log(`[Worker] Running causality analysis for case ${caseId}`);
+  
+  // Verify case still exists in DB
+  const checkCase = await pool.query('SELECT id FROM cases WHERE id = $1', [caseId]);
+  if (checkCase.rows.length === 0) {
+    console.warn(`[Worker] Case ${caseId} does not exist in database. Skipping.`);
+    return;
+  }
+
+  // Call the causality pipeline internally
+  const url = `http://127.0.0.1:${PORT}/api/ai/causality`;
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      conversation: [{ role: 'user', content: transcript }],
+      mpName,
+      constituency,
+      writerName
+    }),
+    signal: AbortSignal.timeout(180_000),
+  });
+
+  if (!resp.ok) {
+    throw new Error(`Causality API request failed with status ${resp.status}`);
+  }
+
+  const payload = await resp.json();
+  const { causalGraph, letters = [] } = payload;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // 1. Update causal graph on case
+    await client.query(
+      'UPDATE cases SET causal_graph = $1, updated_at = NOW() WHERE id = $2',
+      [JSON.stringify(causalGraph), caseId]
+    );
+
+    // 2. Clear and reinsert document requirements
+    await client.query('DELETE FROM document_requirements WHERE case_id = $1', [caseId]);
+    const docReqs = causalGraph.documentRequirements || [];
+    let docReqsSaved = 0;
+    for (const req of docReqs) {
+      if (!req.documentType || !req.agency) continue;
+      await client.query(
+        `INSERT INTO document_requirements
+           (case_id, agency, document_type, reason, related_node_ids, required, source_type, source_institution)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [
+          caseId,
+          req.agency,
+          req.documentType,
+          req.reason || '',
+          req.relatedNodeIds || [],
+          req.required !== false,
+          req.sourceType === 'government_request' ? 'government_request' : 'resident',
+          req.sourceInstitution || null
+        ]
+      );
+      docReqsSaved++;
+    }
+
+    // 3. Clear and reinsert letters drafts
+    await client.query("DELETE FROM letters WHERE case_id = $1 AND status = 'draft'", [caseId]);
+    let lettersCreated = 0;
+    for (const letter of letters) {
+      if (!letter.agency || !letter.content) continue;
+      await client.query(
+        `INSERT INTO letters (case_id, agency, agency_label, content, status, generated_by)
+         VALUES ($1, $2, $3, $4, 'draft', NULL)`,
+        [caseId, letter.agency, letter.agencyLabel || null, letter.content]
+      );
+      lettersCreated++;
+    }
+
+    // 4. Record case_events audit log
+    await client.query(
+      `INSERT INTO case_events (case_id, actor_id, actor, actor_role, event_type, action, detail)
+       VALUES ($1, NULL, 'System Worker', 'system', 'causality_run', 'causality_run', $2)`,
+      [
+        caseId,
+        JSON.stringify({
+          lettersCreated,
+          documentRequirementsSaved: docReqsSaved,
+          urgency: causalGraph.urgency?.overall || 'Unknown',
+          trigger: 'async_chat_submit'
+        })
+      ]
+    );
+
+    await client.query('COMMIT');
+    console.log(`[Worker] Async causality processing completed for case ${caseId}`);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error(`[Worker] Database transaction failed for case ${caseId}:`, err.message);
+    throw err;
+  } finally {
+    client.release();
+  }
+}, { connection });
+
+worker.on('failed', (job, err) => {
+  console.error(`[Worker] Job ${job.id} failed:`, err.message);
+});
+
 
 // ── Health ────────────────────────────────────────────────────
 app.get('/health', (_, res) => res.json({ status: 'ok', service: 'mps-ai-proxy' }));
