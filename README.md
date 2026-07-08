@@ -96,7 +96,8 @@ Full detail — ERD, trust boundaries, deployment topology, auth flow, and all A
 | Frontend | Next.js 16 (App Router) + TypeScript |
 | Database | PostgreSQL 15 with row-level audit trail |
 | AI proxy | Node.js + Express (server-side, internal only) |
-| AI inference | Ollama — `gemma3n:e2b` (configurable via env var) |
+| AI inference | Ollama — `gemma4:e2b` (configurable via env var) |
+| Task Queue | BullMQ + Redis (async causality pipeline processing) |
 | Speech-to-text | Wyoming Whisper via FastAPI bridge |
 | Text-to-speech | Wyoming Piper via FastAPI bridge |
 | File scanning | ClamAV daemon |
@@ -126,7 +127,7 @@ Full detail — ERD, trust boundaries, deployment topology, auth flow, and all A
 ### Prerequisites
 
 - Docker and Docker Compose
-- Ollama running with `gemma3n:e2b` pulled (or any OpenAI-compatible endpoint)
+- Ollama running with `gemma4:e2b` pulled (or any OpenAI-compatible endpoint)
 - `ai-bridge` Docker network (create with `docker network create ai-bridge` if it doesn't exist)
 
 ### Environment
@@ -138,7 +139,7 @@ POSTGRES_PASSWORD=your-db-password
 JWT_SECRET=your-32-char-minimum-secret
 VITE_STAFF_ACCESS_CODE=your-chosen-code
 OLLAMA_ENDPOINT=http://<ollama-host>:11434/api/chat
-AI_MODEL=gemma3n:e2b
+AI_MODEL=gemma4:e2b
 APP_URL=http://localhost:3080
 ```
 
@@ -172,7 +173,7 @@ docker exec -i mps-postgres psql -U mps -d mps_connect < ./db/seed_cases_300.sql
 | `JWT_SECRET` | JWT signing secret (min 32 chars) | — |
 | `VITE_STAFF_ACCESS_CODE` | Staff portal access code | — |
 | `OLLAMA_ENDPOINT` | Ollama chat API URL (server-side proxy only) | `http://localhost:11434/api/chat` |
-| `AI_MODEL` | Ollama model name | `gemma3n:e2b` |
+| `AI_MODEL` | Ollama model name | `gemma4:e2b` |
 | `APP_URL` | Public URL for CORS and upload links | `http://localhost:3080` |
 | `AI_KILL_SWITCH` | Emergency AI disable (IMDA Dim.1 compliance) | `false` |
 | `NODE_ENV` | Node environment | `production` |
@@ -339,7 +340,7 @@ MPS-Connect is scoped for single-branch to small-cluster deployment. A single co
 | Trigger | Architectural change |
 | --- | --- |
 | >3 branches on one deployment | PgBouncer connection pooling; row-level security by branch ID; read replica for analytics |
-| >10 concurrent causality analyses | Sync HTTP → async job queue (BullMQ + Redis); resident submits, receives job ID, polls status |
+| >10 concurrent causality analyses | [IMPLEMENTED] Async job queue (BullMQ + Redis); offloads long-running Ollama requests |
 | National deployment (97 branches) | Ollama inference cluster or inference queue behind BullMQ; multi-tenant branch isolation |
 | High-availability requirement | Multiple stateless proxy instances behind nginx upstream; horizontally trivial |
 | Cross-branch SLA analytics | Read replica + materialized views; no schema change to the append-only audit tables |
