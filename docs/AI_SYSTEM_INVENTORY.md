@@ -40,6 +40,7 @@
 | Risk Tier | High (generates formal government correspondence) |
 | Data Processed | Conversation transcripts, case metadata |
 | PII Handling | Sanitized inputs; letters use placeholders (██ NRIC ██) for completion by staff |
+| Letter Generation Mechanism | **Hybrid Architecture:** AI extracts causal facts, urgency, and routing asks into a structured graph $\rightarrow$ Local deterministic JavaScript assembler compiles final letters using pre-formatted agency templates to eliminate model hallucinations and guarantee PII safety boundary limits. |
 | Decision Authority | Advisory — letters require MP approval before sending |
 | Kill Switch | Same as MPS-AI-001 (shared proxy) |
 | Audit Trail | `CAUSALITY` events in audit chain |

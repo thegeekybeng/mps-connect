@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-07-09
+
+### Added
+
+- **vLLM Serving Support:** Upgraded serving specifications to declare `vLLM` as the high-throughput production inference runner, retaining `Ollama` as the developer-level fallback.
+- **Enterprise Templates:** Created `docker-compose.example.yml`, `Dockerfile.example`, and `api/Dockerfile.example` templates, git-ignoring active local working configs.
+- **ClamAV Definition Persistence:** Added persistent `clamav-db` Docker volume mapping to cache signatures, reducing container boot time from minutes to under 5 seconds.
+- **Public Architecture Decisions:** Exposed sanitized `docs/ARCHITECTURE_DECISIONS.md` to the public repository (previously hidden under the `.ai-arch` ignore path).
+- **SQLite WAL size limits:** Set the `journal_size_limit` pragma on the audit database client to prevent unbounded WAL file disk growth.
+
+### Changed
+
+- **Dependencies Upgraded:** Refactored peer dependencies to secure, modern versions (`typescript@5.8.2`, `eslint@9.20.0`, `bcryptjs@^3.0.3`, `lucide-react@^1.23.0`).
+- **README presentation:** Re-engineered the project README to match CodLabStudio's presentation layout, utilizing status badges, a prominent vision box, and dot-separated GitHub Topics.
+- **Official R&D Disclaimer:** Appended a prominent disclaimer clarification stating that the tool is an independent research digital twin project not affiliated with the Singapore Government.
+
+### Fixed
+
+- **PostCSS XSS Vulnerability:** Patched moderate CVE advisory for postcss via dependency overrides in `package.json`.
+
+## [2.0.0] - 2026-06-15
+
 ### Added
 
 - **Next.js 15 Migration** — complete rewrite from Vite SPA to Next.js 15 App Router with server actions

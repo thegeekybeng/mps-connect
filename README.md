@@ -31,7 +31,7 @@ MPS-Connect functions as a digital twin that mirrors and extends the physical Me
 
 * **24/7 Resident Access:** Resident-facing portals with dynamic multi-lingual AI intake guides (English, Mandarin, Malay, Tamil, and Singlish) acting as virtual reception desks.
 * **Case Writer Intelligence Panel:** 3-stage causality engine (Foundation → Reasoning → Action) yielding a structured `CausalGraph` of root causes and information gaps.
-* **Deterministic Multi-Agency Correspondence:** Generates agency-specific, domain-weighted appeal letters with automatic client-side PII masking.
+* **Deterministic Multi-Agency Correspondence:** Uses a hybrid pipeline. The AI engine extracts facts, urgency, and routing asks into a structured causal graph, while a local deterministic compiler formats the letters using standardized agency templates to completely prevent LLM hallucinations and guarantee PII boundaries.
 * **Human-in-the-Loop (HITL) Governance:** Seven mandatory review gates (Gates 0–6) ensuring no AI decision reaches formal correspondence without human sign-off.
 * **Immutable Audit Trail:** Append-only case event log in PostgreSQL combined with a cryptographically chained SQLite transaction history.
 * **RBAC & Compliance:** 5 distinct tenancy roles (`superadmin`, `mp`, `admin`, `writer`, `registry`) mapped to strict action policies.
