@@ -68,7 +68,19 @@ Our architecture utilizes a strict 4-layer stack to separate business requiremen
                └──────────────────────────────────────────────────┘
 ```
 
-Detailed ERD schemas, network topologies, and all Architecture Decision Records (ADRs) are documented inside [`.ai-arch/`](./.ai-arch/).
+Detailed ERD schemas, network topologies, and all Architecture Decision Records (ADRs) are documented inside the [`docs/`](./docs/) directory:
+
+| Document | Contents |
+| --- | --- |
+| [Architecture Overview](docs/charts/architecture-overview.html) | 4-layer conceptual model with full layer descriptions |
+| [Context Diagram (C1)](docs/charts/context.html) | System boundary, external actors, dependency risks |
+| [Container Diagram (C2)](docs/charts/containers.html) | Every service, port, protocol, ADR mapping |
+| [Data Flow](docs/charts/dataflow.html) | 4 trust boundaries, PII masking chain, data at rest |
+| [Deployment](docs/charts/deployment.html) | Physical hosting zones, VPN topology, data residency |
+| [Auth Flow](docs/charts/auth_flow.html) | Demo auth, persona picker, JWT session lifecycle |
+| [Case State Machine](docs/charts/state_case.html) | Full lifecycle with HITL gates and SLA mapping |
+| [ERD](docs/charts/erd.html) | Database schema, PII classification, denormalisation |
+| [Architecture Decisions](./docs/ARCHITECTURE_DECISIONS.md) | All ADRs with alternatives considered |
 
 ---
 
