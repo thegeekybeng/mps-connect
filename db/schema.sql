@@ -165,6 +165,9 @@ CREATE TABLE IF NOT EXISTS case_messages (
   case_id   INT NOT NULL REFERENCES cases(id),
   role      VARCHAR(10) NOT NULL CHECK (role IN ('user','assistant','system')),
   content   TEXT NOT NULL,
+  is_stt    BOOLEAN DEFAULT FALSE,
+  stt_duration_seconds INTEGER,
+  audio_url VARCHAR(255),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -279,6 +282,8 @@ CREATE TABLE IF NOT EXISTS agent_preferences (
   preferred_model VARCHAR(50),
   excluded_categories TEXT[],
   max_urgency     VARCHAR(20) DEFAULT 'Medium',
+  auto_approve_categories TEXT[] DEFAULT '{}',
+  excluded_keywords TEXT[] DEFAULT '{}',
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

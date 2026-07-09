@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
-import { requireAuth } from '@/lib/auth';
+import { requireAuth, type UserRole } from '@/lib/auth';
+import { can } from '@/lib/rbac';
 import { db } from '@/lib/db';
 import Link from 'next/link';
 import { CaseTableRow } from '@/components/CaseTableRow';
@@ -10,15 +11,16 @@ import {
 
 export const metadata: Metadata = { title: 'Dashboard — MPS Connect' };
 
-async function fetchKPIs(constituencyId: number | null) {
-  const p  = constituencyId ? [constituencyId] : [];
-  const sc = constituencyId ? 'AND constituency_id = $1' : '';
+async function fetchKPIs(constituencyId: number | null, role: UserRole) {
+  const bypass = can(role, 'constituencies:read_all');
+  const p  = (constituencyId && !bypass) ? [constituencyId] : [];
+  const sc = (constituencyId && !bypass) ? 'AND constituency_id = $1' : '';
   const [total, critical, pending, resolved, queueToday] = await Promise.all([
     db<{ n: string }>(`SELECT COUNT(*)::text AS n FROM cases WHERE status != 'closed' ${sc}`, p),
     db<{ n: string }>(`SELECT COUNT(*)::text AS n FROM cases WHERE urgency IN ('Critical','High') AND status NOT IN ('approved','sent','closed') ${sc}`, p),
     db<{ n: string }>(`SELECT COUNT(*)::text AS n FROM cases WHERE status = 'pending_approval' ${sc}`, p),
     db<{ n: string }>(`SELECT COUNT(*)::text AS n FROM cases WHERE status IN ('approved','sent') AND updated_at > NOW() - INTERVAL '7 days' ${sc}`, p),
-    db<{ n: string }>(`SELECT COUNT(*)::text AS n FROM queue_entries qe JOIN mps_sessions s ON s.id=qe.session_id WHERE s.session_date=CURRENT_DATE ${constituencyId ? 'AND s.constituency_id=$1' : ''}`, p),
+    db<{ n: string }>(`SELECT COUNT(*)::text AS n FROM queue_entries qe JOIN mps_sessions s ON s.id=qe.session_id WHERE s.session_date=CURRENT_DATE ${(constituencyId && !bypass) ? 'AND s.constituency_id=$1' : ''}`, p),
   ]);
   return {
     total:      +( total[0]?.n      ?? 0),
@@ -29,26 +31,34 @@ async function fetchKPIs(constituencyId: number | null) {
   };
 }
 
-async function fetchRecentCases(constituencyId: number | null) {
+async function fetchRecentCases(constituencyId: number | null, role: UserRole) {
+  const bypass = can(role, 'constituencies:read_all');
   return db<{ id: number; resident_name: string; category: string; urgency: string; status: string; created_at: string }>(
     `SELECT id, resident_name, category, urgency, status, created_at
-     FROM cases WHERE ${constituencyId ? 'constituency_id=$1 AND' : ''} status != 'closed'
+     FROM cases WHERE ${(constituencyId && !bypass) ? 'constituency_id=$1 AND' : ''} status != 'closed'
      ORDER BY CASE urgency WHEN 'Critical' THEN 1 WHEN 'High' THEN 2 WHEN 'Medium' THEN 3 ELSE 4 END, created_at DESC
      LIMIT 6`,
-    constituencyId ? [constituencyId] : []
+    (constituencyId && !bypass) ? [constituencyId] : []
   );
 }
 
 export default async function DashboardPage() {
   const session = await requireAuth();
-  const [kpis, recent] = await Promise.all([fetchKPIs(session.constituencyId), fetchRecentCases(session.constituencyId)]);
+  const [kpis, recent] = await Promise.all([
+    fetchKPIs(session.constituencyId, session.role),
+    fetchRecentCases(session.constituencyId, session.role)
+  ]);
+
+  const canReadCases = can(session.role, 'cases:read');
+  const canApprove   = can(session.role, 'letters:approve');
 
   // Cases that arrived since the user's previous login
+  const bypass = can(session.role, 'constituencies:read_all');
   const newSinceLastVisit = session.lastSeenAt
     ? await db<{ n: string }>(
         `SELECT COUNT(*)::text AS n FROM cases
-         WHERE created_at > $1 ${session.constituencyId ? 'AND constituency_id = $2' : ''}`,
-        session.constituencyId
+         WHERE created_at > $1 ${session.constituencyId && !bypass ? 'AND constituency_id = $2' : ''}`,
+         session.constituencyId && !bypass
           ? [session.lastSeenAt, session.constituencyId]
           : [session.lastSeenAt]
       ).then(r => +(r[0]?.n ?? 0))
@@ -80,21 +90,27 @@ export default async function DashboardPage() {
           label="Active Cases"
           value={kpis.total}
           accent="#2E5D8C"
-          href="/dashboard/cases"
+          href={canReadCases ? "/dashboard/cases" : undefined}
         />
         <StatCard
           icon={<AlertTriangle size={16} />}
           label="Critical / High"
           value={kpis.critical}
           accent="#EE2536"
-          href="/dashboard/cases"
+          href={canReadCases ? "/dashboard/cases" : undefined}
         />
         <StatCard
           icon={<Clock size={16} />}
           label="Pending Approval"
           value={kpis.pending}
           accent="#D97706"
-          href="/dashboard/approvals"
+          href={
+            canApprove
+              ? "/dashboard/approvals"
+              : canReadCases
+              ? "/dashboard/cases?status=pending_approval"
+              : undefined
+          }
         />
         <StatCard
           icon={<CheckCircle2 size={16} />}
@@ -132,18 +148,20 @@ export default async function DashboardPage() {
         <Link href="/dashboard/queue" className="gov-btn-primary">
           <Users size={14} /> View Queue
         </Link>
-        {kpis.pending > 0 && (
+        {kpis.pending > 0 && (canApprove || canReadCases) && (
           <Link
-            href="/dashboard/approvals"
+            href={canApprove ? "/dashboard/approvals" : "/dashboard/cases?status=pending_approval"}
             className="gov-btn-primary"
             style={{ background: '#D97706', borderColor: '#D97706' }}
           >
             <Clock size={14} /> {kpis.pending} Pending Approval{kpis.pending > 1 ? 's' : ''}
           </Link>
         )}
-        <Link href="/dashboard/analytics" className="gov-btn-secondary">
-          <TrendingUp size={14} /> Analytics
-        </Link>
+        {can(session.role, 'analytics:read') && (
+          <Link href="/dashboard/analytics" className="gov-btn-secondary">
+            <TrendingUp size={14} /> Analytics
+          </Link>
+        )}
       </div>
 
       {/* ── Recent cases table ────────────────────────────────── */}

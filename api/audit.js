@@ -23,6 +23,7 @@ let LAST   = null;
 try {
   db = new Database(DB_PATH);
   db.pragma('journal_mode = WAL');
+  db.pragma('journal_size_limit = 10485760'); // 10MB limit on WAL file before auto-checkpointing
   db.exec(`
     CREATE TABLE IF NOT EXISTS audit_events (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,

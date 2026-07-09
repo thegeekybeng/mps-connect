@@ -360,3 +360,281 @@ export async function overrideAgency(
 
   return { ok: true, agencies };
 }
+
+// ── Send case letters ────────────────────────────────────────────
+export async function sendCaseLetters(
+  caseId: number
+): Promise<{ ok: boolean; error?: string }> {
+  const session = await requireAuth();
+  if (!can(session.role, 'letters:send')) {
+    return { ok: false, error: 'Insufficient permissions to send letters.' };
+  }
+
+  // Fetch current case status
+  const row = await dbOne<{ status: string }>(
+    'SELECT status FROM cases WHERE id = $1',
+    [caseId]
+  );
+  if (!row) return { ok: false, error: 'Case not found.' };
+  if (row.status !== 'approved') {
+    return { ok: false, error: `Cannot send — case is currently in '${row.status}' status.` };
+  }
+
+  // Update case status to 'sent'
+  await dbOne(
+    `UPDATE cases SET status = 'sent', updated_at = NOW() WHERE id = $1`,
+    [caseId]
+  );
+
+  // Update approved letters status to 'sent'
+  await db(
+    `UPDATE letters SET status = 'sent' WHERE case_id = $1 AND status = 'approved'`,
+    [caseId]
+  );
+
+  // Audit event
+  await dbOne(
+    `INSERT INTO case_events (case_id, actor_id, actor_role, action, detail)
+     VALUES ($1, $2, $3, 'sent_to_agencies', $4)`,
+    [caseId, session.userId, session.role, JSON.stringify({ reason: 'All approved letters dispatched to the respective government agencies.', sent_by: session.userId })]
+  );
+
+  revalidatePath(`/dashboard/cases/${caseId}`);
+  revalidatePath('/dashboard/cases');
+  revalidatePath('/dashboard');
+
+  return { ok: true };
+}
+
+// ── Log agency response ──────────────────────────────────────────
+export async function logAgencyResponse(
+  caseId: number,
+  agency: string,
+  outcome: string,
+  notes: string
+): Promise<{ ok: boolean; error?: string }> {
+  const session = await requireAuth();
+  if (!can(session.role, 'cases:update')) {
+    return { ok: false, error: 'Insufficient permissions to update case.' };
+  }
+
+  const trimmedAgency = agency?.trim() ?? '';
+  const trimmedOutcome = outcome?.trim() ?? '';
+  const trimmedNotes = notes?.trim() ?? '';
+
+  if (!trimmedAgency || !trimmedOutcome || !trimmedNotes) {
+    return { ok: false, error: 'Agency, outcome, and notes are all required.' };
+  }
+
+  // Audit event representing the agency's reply
+  await dbOne(
+    `INSERT INTO case_events (case_id, actor_id, actor_role, action, detail)
+     VALUES ($1, $2, $3, 'agency_response_received', $4)`,
+    [
+      caseId,
+      session.userId,
+      session.role,
+      JSON.stringify({
+        agency: trimmedAgency,
+        outcome: trimmedOutcome,
+        reason: `${trimmedAgency} outcome: ${trimmedOutcome}. ${trimmedNotes}`,
+        logged_by: session.userId,
+      }),
+    ]
+  );
+
+  revalidatePath(`/dashboard/cases/${caseId}`);
+
+  return { ok: true };
+}
+
+// ── Close case ───────────────────────────────────────────────────
+export async function closeCase(
+  caseId: number,
+  outcomeNotes: string
+): Promise<{ ok: boolean; error?: string }> {
+  const session = await requireAuth();
+  if (!can(session.role, 'cases:close')) {
+    return { ok: false, error: 'Insufficient permissions to close case.' };
+  }
+
+  const trimmedNotes = outcomeNotes?.trim() ?? '';
+  if (trimmedNotes.length < 5) {
+    return { ok: false, error: 'Closure outcome notes (minimum 5 characters) are required.' };
+  }
+
+  // Update case status to 'closed'
+  await dbOne(
+    `UPDATE cases SET status = 'closed', updated_at = NOW() WHERE id = $1`,
+    [caseId]
+  );
+
+  // Audit event
+  await dbOne(
+    `INSERT INTO case_events (case_id, actor_id, actor_role, action, detail)
+     VALUES ($1, $2, $3, 'case_closed', $4)`,
+    [
+      caseId,
+      session.userId,
+      session.role,
+      JSON.stringify({
+        reason: `Case closed. Outcome details: ${trimmedNotes}`,
+        closed_by: session.userId,
+      }),
+    ]
+  );
+
+  revalidatePath(`/dashboard/cases/${caseId}`);
+  revalidatePath('/dashboard/cases');
+  revalidatePath('/dashboard');
+
+  return { ok: true };
+}
+
+// ── Simulate Agency Response & Auto-Closure ──────────────────────
+export async function simulateAutoClosure(
+  caseId: number
+): Promise<{ ok: boolean; error?: string }> {
+  const session = await requireAuth();
+  if (!can(session.role, 'cases:update')) {
+    return { ok: false, error: 'Insufficient permissions to update case.' };
+  }
+
+  // Get case details and letters
+  const caseRow = await dbOne<{ status: string; resident_name: string }>(
+    'SELECT status, resident_name FROM cases WHERE id = $1',
+    [caseId]
+  );
+  if (!caseRow) return { ok: false, error: 'Case not found.' };
+  if (caseRow.status !== 'sent') {
+    return { ok: false, error: `Can only auto-simulate response and close for 'sent' cases.` };
+  }
+
+  const letters = await db<{ agency: string; agency_label: string | null }>(
+    'SELECT agency, agency_label FROM letters WHERE case_id = $1',
+    [caseId]
+  );
+
+  if (letters.length === 0) {
+    return { ok: false, error: 'No dispatched letters found for this case.' };
+  }
+
+  const outcomes = ['Approved', 'Rejected', 'Partially Granted'];
+  const simulatedNotes = [
+    'The agency reviewed the appeal under updated policy guidelines and approved the request in full.',
+    'The request was declined as the applicant exceeds the income ceiling criteria for this specific grant.',
+    'Granted support for 3 months instead of 6 months. Subject to review upon expiry.'
+  ];
+
+  // Log simulated response for each agency
+  for (let i = 0; i < letters.length; i++) {
+    const letter = letters[i];
+    const outcomeIdx = Math.floor(Math.random() * outcomes.length);
+    const outcome = outcomes[outcomeIdx];
+    const notes = simulatedNotes[outcomeIdx];
+    const agencyLabel = letter.agency_label ?? letter.agency;
+
+    await dbOne(
+      `INSERT INTO case_events (case_id, actor_id, actor_role, action, detail)
+       VALUES ($1, NULL, 'system', 'agency_response_received', $2)`,
+      [
+        caseId,
+        JSON.stringify({
+          agency: letter.agency,
+          outcome,
+          reason: `Automated Simulation: ${agencyLabel} response received. Outcome: ${outcome}. ${notes}`,
+          logged_by: 'system_auto_agent'
+        })
+      ]
+    );
+  }
+
+  // Auto-close the case
+  await dbOne(
+    `UPDATE cases SET status = 'closed', updated_at = NOW() WHERE id = $1`,
+    [caseId]
+  );
+
+  // Log closure audit event
+  await dbOne(
+    `INSERT INTO case_events (case_id, actor_id, actor_role, action, detail)
+     VALUES ($1, NULL, 'system', 'case_closed', $2)`,
+    [
+      caseId,
+      JSON.stringify({
+        reason: 'Automated Closure: All agency responses received. Resolution pipeline completed and closed automatically.',
+        closed_by: 'system_auto_agent'
+      })
+    ]
+  );
+
+  revalidatePath(`/dashboard/cases/${caseId}`);
+  revalidatePath('/dashboard/cases');
+  revalidatePath('/dashboard');
+
+  return { ok: true };
+}
+
+export interface PastVisit {
+  id: number;
+  case_number: string | null;
+  category: string | null;
+  urgency: string;
+  status: string;
+  created_at: string;
+  agency_outcomes: Array<{ agency: string; outcome: string }>;
+}
+
+// ── Fetch Resident Visit Historic Records ───────────────────────
+export async function fetchResidentVisitHistory(
+  residentName: string,
+  nricMasked: string | null
+): Promise<PastVisit[]> {
+  const session = await requireAuth();
+  if (!can(session.role, 'cases:read')) {
+    return [];
+  }
+
+  // Find all cases matching Name or NRIC
+  const rows = await db<{
+    id: number; case_number: string | null; category: string | null;
+    urgency: string; status: string; created_at: string;
+  }>(
+    `SELECT id, case_number, category, urgency, status, created_at
+     FROM cases
+     WHERE resident_name = $1 OR (nric_masked IS NOT NULL AND nric_masked = $2)
+     ORDER BY created_at DESC`,
+    [residentName, nricMasked]
+  );
+
+  const visits: PastVisit[] = [];
+
+  for (const r of rows) {
+    // Find agency response events for each past case
+    const events = await db<{ detail: any }>(
+      `SELECT detail FROM case_events 
+       WHERE case_id = $1 AND action = 'agency_response_received'`,
+      [r.id]
+    );
+
+    const outcomes = events.map(ev => {
+      const d = ev.detail ?? {};
+      return {
+        agency: String(d.agency ?? 'Agency'),
+        outcome: String(d.outcome ?? 'Replied')
+      };
+    });
+
+    visits.push({
+      id: r.id,
+      case_number: r.case_number,
+      category: r.category,
+      urgency: r.urgency,
+      status: r.status,
+      created_at: r.created_at,
+      agency_outcomes: outcomes
+    });
+  }
+
+  return visits;
+}

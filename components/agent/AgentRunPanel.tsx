@@ -41,10 +41,13 @@ function ConfidenceBar({ value, decision }: { value: number; decision: 'approved
 // ── Single result card ─────────────────────────────────────────
 function ResultCard({ result }: { result: AgentResult }) {
   const isRule      = result.source === 'rule';
+  const isFailed    = result.source === 'cascade-failed';
   const isApproved  = result.decision === 'approved';
 
-  // Colour scheme: rule=slate (pre-screen), approved=emerald, escalated=violet
-  const scheme = isRule
+  // Colour scheme: failed=amber, rule=slate (pre-screen), approved=emerald, escalated=violet
+  const scheme = isFailed
+    ? { bg: 'bg-amber-50',    border: 'border-amber-200',  text: 'text-amber-700',  badge: 'bg-amber-100  text-amber-800',  icon: ShieldAlert, iconCls: 'text-amber-500' }
+    : isRule
     ? { bg: 'bg-slate-50',    border: 'border-slate-200',  text: 'text-slate-700',  badge: 'bg-slate-100  text-slate-600',  icon: ShieldAlert, iconCls: 'text-slate-400' }
     : isApproved
     ? { bg: 'bg-emerald-50',  border: 'border-emerald-200',text: 'text-emerald-800',badge: 'bg-emerald-100 text-emerald-700', icon: CheckCircle2, iconCls: 'text-emerald-500' }
@@ -52,7 +55,9 @@ function ResultCard({ result }: { result: AgentResult }) {
 
   const StatusIcon = scheme.icon;
 
-  const sourceLabel = isRule
+  const sourceLabel = isFailed
+    ? 'Cascade Timeout'
+    : isRule
     ? 'Pre-screen · Rule'
     : isApproved
     ? 'AI Approved'
@@ -178,6 +183,7 @@ export default function AgentRunPanel({ pendingCases }: { pendingCases: PendingC
   const doneCount     = Object.keys(results).length;
   const approvedCount  = Object.values(results).filter(r => r.decision === 'approved').length;
   const ruleCount     = Object.values(results).filter(r => r.source === 'rule').length;
+  const failedCount   = Object.values(results).filter(r => r.source === 'cascade-failed').length;
   const modelCount    = Object.values(results).filter(r => r.source === 'model').length;
 
   return (
@@ -195,6 +201,7 @@ export default function AgentRunPanel({ pendingCases }: { pendingCases: PendingC
             {doneCount > 0 && (
               <> · <span className="text-emerald-600">{approvedCount} approved</span>
                {ruleCount > 0 && <> · <span className="text-slate-500">{ruleCount} rule-escalated</span></>}
+               {failedCount > 0 && <> · <span className="text-amber-600">{failedCount} timed out</span></>}
                {modelCount > 0 && <> · <span className="text-violet-600">{modelCount - approvedCount > 0 ? modelCount - approvedCount : 0} AI-escalated</span></>}
               </>
             )}
@@ -245,17 +252,45 @@ export default function AgentRunPanel({ pendingCases }: { pendingCases: PendingC
               {/* Case header row */}
               <div className="flex items-center justify-between gap-3 px-4 py-3">
                 <div className="flex-1 min-w-0">
-                  <a
-                    href={`/dashboard/cases/${c.id}`}
-                    className="font-semibold text-slate-900 text-sm hover:text-indigo-700 transition-colors
-                               inline-flex items-center gap-1 group"
-                  >
-                    {c.resident_name}
-                    <ExternalLink size={11} className="opacity-0 group-hover:opacity-60 transition-opacity shrink-0" />
-                  </a>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <a
+                      href={`/dashboard/cases/${c.id}`}
+                      className="font-semibold text-slate-900 text-sm hover:text-indigo-700 transition-colors
+                                 inline-flex items-center gap-1 group"
+                    >
+                      {c.resident_name}
+                      <ExternalLink size={11} className="opacity-0 group-hover:opacity-60 transition-opacity shrink-0" />
+                    </a>
+
+                    {/* Aligned Status & Confidence Badges */}
+                    {result && (
+                      <>
+                        {result.source === 'rule' && (
+                          <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
+                            Pre-screen Rule
+                          </span>
+                        )}
+                        {result.source === 'cascade-failed' && (
+                          <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-250">
+                            Timeout
+                          </span>
+                        )}
+                        {result.source === 'model' && result.decision === 'approved' && (
+                          <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            AI Approved · Confidence: {Math.round(result.confidence * 100)}%
+                          </span>
+                        )}
+                        {result.source === 'model' && result.decision === 'escalated' && (
+                          <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-violet-100 text-violet-800 border border-violet-200">
+                            AI Escalated · Confidence: {Math.round(result.confidence * 100)}%
+                          </span>
+                        )}
+                      </>
+                    )}
+                  </div>
                   <p className="text-slate-400 text-xs truncate mt-0.5">
-                    {c.category ?? 'Uncategorised'} · {c.urgency}
-                    {c.summary && ` · ${c.summary.slice(0, 60)}…`}
+                    <span className="font-semibold text-slate-500">{c.category ?? 'Uncategorised'}</span> · <span className="font-medium text-slate-500">{c.urgency}</span>
+                    {result ? ` · ${result.summary}` : (c.summary && ` · ${c.summary.slice(0, 80)}…`)}
                   </p>
                 </div>
 
@@ -290,34 +325,6 @@ export default function AgentRunPanel({ pendingCases }: { pendingCases: PendingC
               {result && isExpanded && (
                 <div className="border-t border-slate-200 p-3">
                   <ResultCard result={result} />
-                </div>
-              )}
-
-              {/* Collapsed summary when result exists */}
-              {result && !isExpanded && (
-                <div className={`border-t px-4 py-2 flex items-center justify-between text-xs
-                  ${result.source === 'rule'
-                    ? 'border-slate-200 bg-slate-100 text-slate-500'
-                    : result.decision === 'approved'
-                    ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
-                    : 'border-violet-100 bg-violet-50 text-violet-700'
-                  }`}>
-                  <span className="font-medium truncate">{result.summary}</span>
-                  <div className="flex items-center gap-3 ml-2 shrink-0">
-                    {result.source !== 'rule' && (
-                      <span className="font-bold tabular-nums">
-                        {Math.round(result.confidence * 100)}%
-                      </span>
-                    )}
-                    {result.source === 'rule' && (
-                      <a
-                        href="/dashboard/approvals"
-                        className="text-indigo-600 hover:text-indigo-800 font-bold transition-colors"
-                      >
-                        Review in Approvals →
-                      </a>
-                    )}
-                  </div>
                 </div>
               )}
             </div>

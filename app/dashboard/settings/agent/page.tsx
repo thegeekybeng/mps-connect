@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { requireAuth } from '@/lib/auth';
+import { requireAuth, type UserRole } from '@/lib/auth';
 import { getAgentPreferences } from '@/app/actions/agent';
 import { can } from '@/lib/rbac';
 import { redirect } from 'next/navigation';
@@ -15,17 +15,18 @@ export default async function AgentSettingsPage() {
   const session = await requireAuth();
   if (!can(session.role, 'letters:approve')) redirect('/dashboard');
 
+  const bypass = can(session.role, 'constituencies:read_all');
   const [prefs, pendingCases] = await Promise.all([
     getAgentPreferences(session.userId),
     db<{ id: number; resident_name: string; category: string | null; urgency: string; summary: string | null }>(
       `SELECT id, resident_name, category, urgency, summary
        FROM cases
        WHERE status = 'pending_approval'
-         ${session.constituencyId ? 'AND constituency_id = $1' : ''}
+         ${session.constituencyId && !bypass ? 'AND constituency_id = $1' : ''}
        ORDER BY
          CASE urgency WHEN 'Critical' THEN 1 WHEN 'High' THEN 2 WHEN 'Medium' THEN 3 ELSE 4 END,
          created_at DESC`,
-      session.constituencyId ? [session.constituencyId] : []
+      session.constituencyId && !bypass ? [session.constituencyId] : []
     ),
   ]);
 

@@ -9,7 +9,7 @@ const SECRET = new TextEncoder().encode(
 // Basic in-memory rate limiting (per Edge isolate)
 const rateLimitMap = new Map<string, { count: number; timestamp: number }>();
 const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
-const MAX_REQUESTS_PER_WINDOW = 60; // 60 requests per minute
+const MAX_REQUESTS_PER_WINDOW = 2000; // 2000 requests per minute (accommodates Next.js prefetching and proxy IP sharing)
 
 function isRateLimited(ip: string): boolean {
   const now = Date.now();
@@ -25,7 +25,7 @@ function isRateLimited(ip: string): boolean {
 // Routes that do NOT require auth
 const PUBLIC_PATHS = ['/login', '/chat', '/upload', '/auth/demo', '/api/auth/login', '/api/health', '/api/postal-lookup', '/api/audio', '/enter-postal-code'];
 
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   // Rate limiting check
   const ip = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || '127.0.0.1';
   if (isRateLimited(ip)) {

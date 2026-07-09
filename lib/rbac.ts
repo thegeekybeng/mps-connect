@@ -6,20 +6,23 @@ import type { UserRole } from './auth';
 
 export const PERMISSIONS = {
   // Cross-constituency
-  'constituencies:read_all':  ['superadmin'] as UserRole[],
-  'analytics:cross_constituency': ['superadmin'] as UserRole[],
+  // NOTE: For demo purposes, we grant 'constituencies:read_all' and 'analytics:cross_constituency' to 'mp' and 'admin' roles
+  // to allow testing the system across multiple resident personas/constituencies.
+  // In a production rollout, 'mp' and 'admin' must be removed from these permissions so they are strictly isolated to their own constituency.
+  'constituencies:read_all':  ['superadmin', 'mp', 'admin'] as UserRole[],
+  'analytics:cross_constituency': ['superadmin', 'mp', 'admin'] as UserRole[],
 
   // Case management
   'cases:read':               ['superadmin','mp','admin','writer'] as UserRole[],
   'cases:create':             ['superadmin','admin','writer'] as UserRole[],
-  'cases:update':             ['superadmin','admin','writer'] as UserRole[],
-  'cases:approve':            ['superadmin','mp'] as UserRole[],
-  'cases:close':              ['superadmin','admin'] as UserRole[],
+  'cases:update':             ['superadmin','admin','writer','mp'] as UserRole[],
+  'cases:approve':            ['superadmin','mp','admin'] as UserRole[],
+  'cases:close':              ['superadmin','admin','mp','writer'] as UserRole[],
 
   // Letters
   'letters:generate':         ['superadmin','admin','writer'] as UserRole[],
-  'letters:approve':          ['superadmin','mp'] as UserRole[],
-  'letters:send':             ['superadmin','admin'] as UserRole[],
+  'letters:approve':          ['superadmin','mp','admin'] as UserRole[],
+  'letters:send':             ['superadmin','admin','mp','writer'] as UserRole[],
 
   // Queue / Registry
   'queue:read':               ['superadmin','mp','admin','writer','registry','volunteer','resident'] as UserRole[],
@@ -57,7 +60,7 @@ export function canAccessConstituency(
   userConstituencyId: number | null,
   targetConstituencyId: number
 ): boolean {
-  if (userRole === 'superadmin') return true;  // superadmin sees all
+  if (can(userRole, 'constituencies:read_all')) return true;  // bypass filter if permission is granted
   return userConstituencyId === targetConstituencyId;
 }
 

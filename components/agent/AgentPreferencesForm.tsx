@@ -5,8 +5,8 @@ import { saveAgentPreferences, type AgentPreferences } from '@/app/actions/agent
 import { Bot, Zap, Brain, Cpu, CheckCircle2, X, Plus, Loader2 } from 'lucide-react';
 
 const ALL_CATEGORIES = [
-  'Housing', 'Employment', 'Medical', 'Financial Aid',
-  'Education', 'Elderly Care', 'Immigration', 'Legal',
+  'Housing', 'Financial Assistance', 'Immigration', 'Employment',
+  'Healthcare', 'Education', 'Infrastructure', 'Other'
 ];
 
 const MODEL_OPTIONS = [

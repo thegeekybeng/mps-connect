@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
-import { requireAuth } from '@/lib/auth';
+import { requireAuth, type UserRole } from '@/lib/auth';
 import { can } from '@/lib/rbac';
 import { db } from '@/lib/db';
 import { CaseTableRow } from '@/components/CaseTableRow';
@@ -29,7 +29,7 @@ interface CaseRow {
 // ── Data fetch ─────────────────────────────────────────────────
 async function fetchCases(
   constituencyId: number | null,
-  role: string,
+  role: UserRole,
   status: string,
   urgency: string,
   q: string,
@@ -42,7 +42,8 @@ async function fetchCases(
   const params: unknown[]    = [];
   let   idx = 1;
 
-  if (constituencyId && role !== 'superadmin') {
+  const bypass = can(role, 'constituencies:read_all');
+  if (constituencyId && !bypass) {
     conditions.push(`c.constituency_id = $${idx++}`);
     params.push(constituencyId);
   }

@@ -53,7 +53,7 @@ export interface AgentDecision {
   decision:    string;
   confidence:  number;
   reasoning:   string;
-  model_used:  string;
+  model:       string;
   created_at:  string;
 }
 
@@ -283,7 +283,7 @@ function AIAnalysisTab({ c }: { c: ApprovalCase }) {
           </div>
           <p className="text-xs text-slate-600 leading-relaxed">{agent.reasoning}</p>
           <p className="text-[10px] text-slate-400 mt-2 font-mono flex items-center gap-1">
-            <Cpu size={10} /> {agent.model_used} · {relDays(agent.created_at)}
+            <Cpu size={10} /> {agent.model} · {relDays(agent.created_at)}
           </p>
         </div>
       )}
@@ -626,6 +626,14 @@ function CaseCard({ c }: { c: ApprovalCase }) {
               )}
 
               <div className="flex items-center gap-2 ml-auto">
+                <a
+                  href={`/dashboard/cases/${c.id}`}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold
+                             border border-slate-200 text-slate-600 hover:bg-slate-100 transition-colors"
+                >
+                  <BookOpen size={13} /> View Details
+                </a>
+
                 <button
                   onClick={() => setShowReturn(true)}
                   className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold

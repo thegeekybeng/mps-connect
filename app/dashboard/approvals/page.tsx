@@ -1,5 +1,5 @@
 import type { Metadata }      from 'next';
-import { requireAuth }         from '@/lib/auth';
+import { requireAuth, type UserRole } from '@/lib/auth';
 import { can }                 from '@/lib/rbac';
 import { db }                  from '@/lib/db';
 import { notFound }            from 'next/navigation';
@@ -13,7 +13,8 @@ export const dynamic             = 'force-dynamic';
 
 // ── Data fetching ─────────────────────────────────────────────
 
-async function fetchPendingCases(constituencyId: number | null): Promise<ApprovalCase[]> {
+async function fetchPendingCases(constituencyId: number | null, role: UserRole): Promise<ApprovalCase[]> {
+  const bypass = can(role, 'constituencies:read_all');
   // Base case records
   const cases = await db<{
     id: number; resident_name: string; nric_masked: string | null;
@@ -29,11 +30,8 @@ async function fetchPendingCases(constituencyId: number | null): Promise<Approva
             key_facts, suggested_agencies, causal_graph, case_number, updated_at
      FROM cases
      WHERE status = 'pending_approval'
-       ${constituencyId ? 'AND constituency_id = $1' : ''}
-     ORDER BY
-       CASE urgency WHEN 'Critical' THEN 1 WHEN 'High' THEN 2 WHEN 'Medium' THEN 3 ELSE 4 END,
-       updated_at DESC`,
-    constituencyId ? [constituencyId] : []
+       ${constituencyId && !bypass ? 'AND constituency_id = $1' : ''}`,
+    constituencyId && !bypass ? [constituencyId] : []
   );
 
   if (cases.length === 0) return [];
@@ -74,9 +72,9 @@ async function fetchPendingCases(constituencyId: number | null): Promise<Approva
     // Latest agent decision per case (DISTINCT ON)
     db<{
       case_id: number; decision: string; confidence: number;
-      reasoning: string; model_used: string; created_at: string;
+      reasoning: string; model: string; created_at: string;
     }>(
-      `SELECT DISTINCT ON (case_id) case_id, decision, confidence, reasoning, model_used, created_at
+      `SELECT DISTINCT ON (case_id) case_id, decision, confidence, reasoning, model, created_at
        FROM agent_decisions WHERE case_id = ANY($1)
        ORDER BY case_id, created_at DESC`,
       [ids]
@@ -99,15 +97,16 @@ async function fetchPendingCases(constituencyId: number | null): Promise<Approva
   }));
 }
 
-async function fetchRecentlyActioned(constituencyId: number | null) {
+async function fetchRecentlyActioned(constituencyId: number | null, role: UserRole) {
+  const bypass = can(role, 'constituencies:read_all');
   return db<{ id: number; resident_name: string; category: string | null; urgency: string; case_number: string | null; updated_at: string; status: string }>(
     `SELECT id, resident_name, category, urgency, case_number, updated_at, status
      FROM cases
      WHERE status IN ('approved','sent')
-       ${constituencyId ? 'AND constituency_id = $1' : ''}
+       ${constituencyId && !bypass ? 'AND constituency_id = $1' : ''}
        AND updated_at > NOW() - INTERVAL '14 days'
      ORDER BY updated_at DESC LIMIT 10`,
-    constituencyId ? [constituencyId] : []
+    constituencyId && !bypass ? [constituencyId] : []
   );
 }
 
@@ -139,8 +138,8 @@ export default async function ApprovalsPage() {
   if (!can(session.role, 'letters:approve')) notFound();
 
   const [cases, recentlyActioned] = await Promise.all([
-    fetchPendingCases(session.constituencyId),
-    fetchRecentlyActioned(session.constituencyId),
+    fetchPendingCases(session.constituencyId, session.role),
+    fetchRecentlyActioned(session.constituencyId, session.role),
   ]);
 
   return (

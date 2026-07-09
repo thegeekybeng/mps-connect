@@ -38,6 +38,7 @@ services:
       - REDIS_URL=redis://mps-redis:6379
       # AI Proxy (internal)
       - AI_PROXY_URL=http://mps-ai-proxy:3103
+      - OLLAMA_ENDPOINT=${OLLAMA_ENDPOINT:-http://localhost:11434/api/chat}
       - NODE_ENV=${NODE_ENV:-production}
       # Upload portal URL (used to generate upload token links)
       - NEXT_PUBLIC_APP_URL=${APP_URL:-http://localhost:3080}
@@ -153,6 +154,8 @@ services:
     restart: unless-stopped
     networks:
       - ai-bridge
+    volumes:
+      - clamav-db:/var/lib/clamav
 
   # ── MockPass — DISABLED (2026-06-13) ─────────────────────────
   # Auth moved to built-in /auth/demo in Next.js app.
@@ -225,3 +228,4 @@ networks:
 volumes:
   mps-db-data:
   audit-data:    # SQLite audit chain for mps-ai-proxy (prev_hash chained)
+  clamav-db:     # Persistent database cache for ClamAV virus signatures

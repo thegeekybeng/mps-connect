@@ -13,7 +13,7 @@ import { revalidatePath } from 'next/cache';
 
 const OLLAMA_BASE   = (process.env.OLLAMA_ENDPOINT || 'http://localhost:11434/api/chat').replace(/\/api\/chat$/, '');
 const MODEL_CASCADE = ['gemma4:e2b', 'gemma4:12b-mlx', 'qwen3.6:27b'] as const;
-const TIMEOUT_MS    = 15_000;  // 15 s per model
+const TIMEOUT_MS    = 90_000;  // 90 seconds timeout per model call
 
 // ── Types ───────────────────────────────────────────────────────
 export interface AgentPreferences {
@@ -52,11 +52,11 @@ interface ModelDecision {
 export async function getAgentPreferences(userId: number): Promise<AgentPreferences | null> {
   const row = await dbOne<{
     id: number; user_id: number; auto_approve: boolean; preferred_model: string;
-    excluded_categories: string[] | null; max_urgency: string;
-    confidence_threshold: number | null;
+    auto_approve_categories: string[] | null; max_urgency: string;
+    excluded_keywords: string[] | null;
   }>(
     `SELECT id, user_id, auto_approve, preferred_model,
-            excluded_categories, max_urgency, confidence_threshold
+            auto_approve_categories, max_urgency, excluded_keywords
      FROM agent_preferences WHERE user_id = $1`,
     [userId]
   );
@@ -66,10 +66,10 @@ export async function getAgentPreferences(userId: number): Promise<AgentPreferen
     userId:                row.user_id,
     enabled:               row.auto_approve,
     preferredModel:        row.preferred_model,
-    autoApproveCategories: [],
+    autoApproveCategories: row.auto_approve_categories ?? [],
     maxAutoUrgency:        (row.max_urgency as 'Low' | 'Medium') ?? 'Medium',
     requireAgencyMentioned: true,
-    excludedKeywords:      row.excluded_categories ?? [],
+    excludedKeywords:      row.excluded_keywords ?? [],
   };
 }
 
@@ -79,21 +79,23 @@ export async function saveAgentPreferences(prefs: Omit<AgentPreferences, 'id' | 
 
   await dbOne(
     `INSERT INTO agent_preferences
-       (user_id, auto_approve, preferred_model, excluded_categories,
-        max_urgency, updated_at)
-     VALUES ($1,$2,$3,$4,$5,NOW())
+       (user_id, auto_approve, preferred_model, auto_approve_categories,
+        max_urgency, excluded_keywords, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,NOW())
      ON CONFLICT (user_id) DO UPDATE SET
        auto_approve             = EXCLUDED.auto_approve,
        preferred_model          = EXCLUDED.preferred_model,
-       excluded_categories      = EXCLUDED.excluded_categories,
+       auto_approve_categories  = EXCLUDED.auto_approve_categories,
        max_urgency              = EXCLUDED.max_urgency,
+       excluded_keywords        = EXCLUDED.excluded_keywords,
        updated_at               = NOW()`,
     [
       session.userId,
       prefs.enabled,
       prefs.preferredModel,
-      prefs.excludedKeywords,
+      prefs.autoApproveCategories,
       prefs.maxAutoUrgency,
+      prefs.excludedKeywords,
     ]
   );
   revalidatePath('/dashboard/settings/agent');
@@ -102,43 +104,53 @@ export async function saveAgentPreferences(prefs: Omit<AgentPreferences, 'id' | 
 
 // ── Model call with timeout ──────────────────────────────────────
 async function callModel(model: string, prompt: string): Promise<ModelDecision | null> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const maxRetries = 3;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
-  try {
-    const res = await fetch(`${OLLAMA_BASE}/api/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      signal: controller.signal,
-      body: JSON.stringify({
-        model,
-        prompt,
-        stream: false,
-        format: 'json',
-        options: { temperature: 0.1, num_predict: 256 },
-      }),
-    });
+    try {
+      const res = await fetch(`${OLLAMA_BASE}/api/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          model,
+          prompt,
+          stream: false,
+          format: 'json',
+          options: { 
+            temperature: 0.1 + (attempt - 1) * 0.1, // slightly raise temperature on retry to resolve formatting lockups
+            num_predict: 256 
+          },
+        }),
+      });
 
-    if (!res.ok) return null;
-    const data = await res.json() as { response?: string };
-    if (!data.response) return null;
+      if (!res.ok) throw new Error(`Ollama returned status ${res.status}`);
+      const data = await res.json() as { response?: string };
+      if (!data.response) throw new Error('Empty response content');
 
-    const parsed = JSON.parse(data.response) as Partial<ModelDecision>;
-    if (typeof parsed.appropriate !== 'boolean') return null;
+      const parsed = JSON.parse(data.response) as Partial<ModelDecision>;
+      if (typeof parsed.appropriate !== 'boolean') throw new Error('Invalid JSON format: missing appropriate field');
 
-    return {
-      appropriate:  parsed.appropriate,
-      confidence:   typeof parsed.confidence === 'number' ? Math.min(1, Math.max(0, parsed.confidence)) : undefined,
-      summary:      parsed.summary,
-      keyFactors:   Array.isArray(parsed.keyFactors)  ? parsed.keyFactors  : undefined,
-      policyBasis:  Array.isArray(parsed.policyBasis) ? parsed.policyBasis : undefined,
-      flags:        Array.isArray(parsed.flags)        ? parsed.flags        : undefined,
-    };
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timer);
+      clearTimeout(timer);
+      return {
+        appropriate:  parsed.appropriate,
+        confidence:   typeof parsed.confidence === 'number' ? Math.min(1, Math.max(0, parsed.confidence)) : undefined,
+        summary:      parsed.summary,
+        keyFactors:   Array.isArray(parsed.keyFactors)  ? parsed.keyFactors  : undefined,
+        policyBasis:  Array.isArray(parsed.policyBasis) ? parsed.policyBasis : undefined,
+        flags:        Array.isArray(parsed.flags)        ? parsed.flags        : undefined,
+      };
+    } catch (err) {
+      clearTimeout(timer);
+      console.warn(`[callModel] Attempt ${attempt}/${maxRetries} for ${model} failed:`, err instanceof Error ? err.message : err);
+      if (attempt === maxRetries) return null;
+      // Wait 2 seconds before retrying
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
   }
+  return null;
 }
 
 // ── Core approval agent ──────────────────────────────────────────
@@ -239,11 +251,34 @@ export async function runApprovalAgent(
   }
 
   // All models failed — safe default
-  return ruleResult(caseId, session.userId, 'escalated',
-    'All AI models timed out. Escalating to human review as a safe default.',
-    [],
-    ['Fail-safe rule: model cascade exhausted → escalate'],
-    ['Model cascade exhausted — no AI assessment available']);
+  return {
+    decision: 'escalated',
+    reasoning: 'Inference Service Unreachable. All model retries and cascade targets were exhausted.',
+    confidence: 0,
+    model: 'none',
+    source: 'cascade-failed',
+    summary: 'Inference system timed out. Human review required.',
+    keyFactors: ['Ollama model cascade timed out'],
+    policyBasis: ['Fail-safe rule: model cascade exhausted → escalate'],
+    flags: ['Model cascade exhausted — no AI assessment available']
+  };
+}
+
+export async function prewarmAgentModel(): Promise<{ success: boolean }> {
+  const session = await requireAuth();
+  if (!can(session.role, 'letters:approve')) return { success: false };
+  const prefs = await getAgentPreferences(session.userId);
+  const model = prefs?.preferredModel ?? 'gemma4:e2b';
+  try {
+    fetch(`${OLLAMA_BASE}/api/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model }),
+    }).catch(() => {});
+    return { success: true };
+  } catch {
+    return { success: false };
+  }
 }
 
 // ── Override a previous agent decision ──────────────────────────
@@ -306,9 +341,9 @@ async function ruleResult(
 ): Promise<AgentResult> {
   const reasoning = summary;
   await dbOne(
-    `INSERT INTO agent_decisions (case_id, user_id, decision, confidence, reasoning, model_used, accountable_officer_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $2)`,
-    [caseId, userId, decision, 0, reasoning, 'rule-engine']
+    `INSERT INTO agent_decisions (case_id, decision, confidence, reasoning, model, accountable_officer_id, source, summary, key_factors, policy_basis, flags)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+    [caseId, decision, 0, reasoning, 'rule-engine', userId, 'rule', summary, keyFactors, policyBasis, flags]
   );
   if (decision === 'approved') {
     await dbOne(`UPDATE cases SET status = 'approved', updated_at = NOW() WHERE id = $1`, [caseId]);
@@ -330,9 +365,9 @@ async function modelResult(
 ): Promise<AgentResult> {
   const reasoning = summary;
   await dbOne(
-    `INSERT INTO agent_decisions (case_id, user_id, decision, confidence, reasoning, model_used, accountable_officer_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $2)`,
-    [caseId, userId, decision, confidence, reasoning, model]
+    `INSERT INTO agent_decisions (case_id, decision, confidence, reasoning, model, accountable_officer_id, source, summary, key_factors, policy_basis, flags)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+    [caseId, decision, confidence, reasoning, model, userId, 'model', summary, keyFactors, policyBasis, flags]
   );
   if (decision === 'approved') {
     await dbOne(`UPDATE cases SET status = 'approved', updated_at = NOW() WHERE id = $1`, [caseId]);
