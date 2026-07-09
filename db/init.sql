@@ -5,5 +5,4 @@
 -- =============================================================
 
 \i /migrations/schema.sql
-\i /migrations/migration_001_ge2025.sql
-\i /migrations/migration_002_ai_governance.sql
+\i /migrations/seed_constituencies.sql

@@ -83,7 +83,7 @@ CREATE TABLE IF NOT EXISTS cases (
   nric_masked       VARCHAR(20),
   contact_phone     VARCHAR(20),
   phone             VARCHAR(20),
-  category          VARCHAR(50),
+  category          VARCHAR(100),
   sub_category      VARCHAR(100),
   urgency           VARCHAR(20) CHECK (urgency IN ('Low','Medium','High','Critical')),
   status            VARCHAR(30) NOT NULL DEFAULT 'new'
@@ -94,6 +94,8 @@ CREATE TABLE IF NOT EXISTS cases (
   key_facts         TEXT[],
   suggested_agencies TEXT[],
   causal_graph      JSONB,
+  consent_given_at  TIMESTAMPTZ,
+  retention_expires_at TIMESTAMPTZ,
   created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -101,6 +103,7 @@ CREATE TABLE IF NOT EXISTS cases (
 CREATE INDEX IF NOT EXISTS idx_cases_constituency ON cases(constituency_id);
 CREATE INDEX IF NOT EXISTS idx_cases_status       ON cases(status);
 CREATE INDEX IF NOT EXISTS idx_cases_urgency      ON cases(urgency);
+CREATE INDEX IF NOT EXISTS idx_cases_retention    ON cases(retention_expires_at) WHERE retention_expires_at IS NOT NULL;
 
 -- Auto-update updated_at
 CREATE OR REPLACE FUNCTION update_updated_at()
@@ -177,7 +180,7 @@ CREATE INDEX IF NOT EXISTS idx_messages_case ON case_messages(case_id);
 CREATE TABLE IF NOT EXISTS letters (
   id            SERIAL PRIMARY KEY,
   case_id       INT NOT NULL REFERENCES cases(id),
-  agency        VARCHAR(50) NOT NULL,
+  agency        VARCHAR(100) NOT NULL,
   agency_label  VARCHAR(100),
   content       TEXT NOT NULL,
   status        VARCHAR(20) NOT NULL DEFAULT 'draft'
@@ -207,7 +210,7 @@ CREATE TABLE IF NOT EXISTS notifications (
 CREATE TABLE IF NOT EXISTS document_requirements (
   id                 SERIAL PRIMARY KEY,
   case_id            INT NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
-  agency             VARCHAR(50) NOT NULL,
+  agency             VARCHAR(100) NOT NULL,
   document_type      VARCHAR(200) NOT NULL,
   reason             TEXT NOT NULL,
   related_node_ids   TEXT[],
@@ -269,6 +272,7 @@ CREATE TABLE IF NOT EXISTS agent_decisions (
   overridden      BOOLEAN NOT NULL DEFAULT FALSE,
   override_by     INT REFERENCES users(id),
   override_reason TEXT,
+  accountable_officer_id INT REFERENCES users(id),
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
