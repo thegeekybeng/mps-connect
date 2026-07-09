@@ -56,8 +56,8 @@ function isAllowedOrigin(req: NextRequest): boolean {
     'http://localhost:3080',
     'http://127.0.0.1:3000',
     'http://127.0.0.1:3080',
-    'https://mps-connect.thegeekybeng.com',
-    'http://mps-connect.thegeekybeng.com',
+    'https://mps-connect.example.com',
+    'http://mps-connect.example.com',
     selfOrigin,
   ];
   if (APP_URL) allowed.push(APP_URL);

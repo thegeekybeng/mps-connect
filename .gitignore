@@ -69,3 +69,8 @@ HANDOFF.md
 *.pkl
 *.pt
 
+# Local working Docker configurations (use *.example templates for public sharing)
+docker-compose.yml
+Dockerfile
+api/Dockerfile
+
