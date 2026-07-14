@@ -251,6 +251,9 @@ CREATE TABLE IF NOT EXISTS case_documents (
   scan_status     VARCHAR(20) NOT NULL DEFAULT 'pending'
                     CHECK (scan_status IN ('pending','clean','rejected')),
   scan_detail     TEXT,
+  ocr_text        TEXT,
+  ocr_status      VARCHAR(20) NOT NULL DEFAULT 'pending'
+                    CHECK (ocr_status IN ('pending','processing','completed','failed')),
   uploaded_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

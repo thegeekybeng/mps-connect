@@ -9,6 +9,7 @@ import { useState, useEffect, useCallback, useTransition } from 'react';
 import {
   FileCheck2, FileX2, File, Upload, Copy,
   CheckCircle2, Clock, AlertCircle, RefreshCw,
+  BookOpen, Loader2, Bot,
 } from 'lucide-react';
 import { issueUploadToken } from '@/app/actions/documents';
 import type { DocumentRequirement, CaseDocument } from '@/app/actions/documents';
@@ -30,6 +31,11 @@ function groupByAgency(reqs: (DocumentRequirement & { id: number; fulfilled: boo
   return map;
 }
 
+function relDays(iso: string) {
+  const d = Math.round((Date.now() - new Date(iso).getTime()) / 86400000);
+  return d === 0 ? 'today' : d === 1 ? 'yesterday' : `${d}d ago`;
+}
+
 export default function DocumentsCard({ caseId, initialRequirements, initialDocuments, canWrite }: Props) {
   const [requirements, setRequirements] = useState(initialRequirements);
   const [documents, setDocuments]       = useState(initialDocuments);
@@ -39,6 +45,8 @@ export default function DocumentsCard({ caseId, initialRequirements, initialDocu
   const [error, setError]               = useState<string | null>(null);
   const [isPending, startTransition]    = useTransition();
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [expandedOcr, setExpandedOcr]   = useState<Record<number, boolean>>({});
+  const [copiedDocId, setCopiedDocId]   = useState<number | null>(null);
 
   // Refresh fulfilment status every 30 seconds
   const refresh = useCallback(async () => {
@@ -78,6 +86,12 @@ export default function DocumentsCard({ caseId, initialRequirements, initialDocu
     await navigator.clipboard.writeText(uploadUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
+  };
+
+  const handleCopyDoc = (docId: number, text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedDocId(docId);
+    setTimeout(() => setCopiedDocId(null), 2000);
   };
 
   if (requirements.length === 0) {
@@ -231,26 +245,78 @@ export default function DocumentsCard({ caseId, initialRequirements, initialDocu
       {documents.length > 0 && (
         <div className="px-5 py-4 border-t border-slate-100">
           <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-3">
-            Received Files
+            Received Files ({documents.length})
           </p>
           <div className="space-y-2">
-            {documents.map(doc => (
-              <div key={doc.id} className="flex items-center gap-2 text-xs">
-                {doc.scanStatus === 'clean'    && <FileCheck2 size={13} className="text-green-500 shrink-0" />}
-                {doc.scanStatus === 'rejected' && <FileX2    size={13} className="text-red-400 shrink-0" />}
-                {doc.scanStatus === 'pending'  && <Clock     size={13} className="text-amber-400 shrink-0" />}
-                <span className="text-slate-700 truncate">{doc.filename}</span>
-                <span className="text-slate-400 shrink-0">
-                  {(doc.fileSizeBytes / 1024).toFixed(0)} KB
-                </span>
-                <span className={`shrink-0 px-1.5 py-0.5 rounded text-xs font-medium
-                  ${doc.scanStatus === 'clean'    ? 'bg-green-100 text-green-700' :
-                    doc.scanStatus === 'rejected' ? 'bg-red-100 text-red-700' :
-                                                    'bg-amber-100 text-amber-700'}`}>
-                  {doc.scanStatus}
-                </span>
-              </div>
-            ))}
+            {documents.map(doc => {
+              const hasOcr = doc.ocrStatus === 'completed' && doc.ocrText;
+              const isProcessing = doc.ocrStatus === 'processing';
+              const isFailed = doc.ocrStatus === 'failed';
+              const isExpanded = !!expandedOcr[doc.id];
+
+              return (
+                <div key={doc.id} className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
+                  <div className="px-3.5 py-2.5 flex items-center justify-between gap-3 bg-slate-50/50">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      {doc.scanStatus === 'clean'    && <FileCheck2 size={14} className="text-green-500 shrink-0" />}
+                      {doc.scanStatus === 'rejected' && <FileX2    size={14} className="text-red-400 shrink-0" />}
+                      {doc.scanStatus === 'pending'  && <Clock     size={14} className="text-amber-400 shrink-0" />}
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-slate-800 truncate">{doc.filename}</p>
+                        <p className="text-[10px] text-slate-400">{(doc.fileSizeBytes / 1024).toFixed(0)} KB · {relDays(doc.uploadedAt)}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {isProcessing && (
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 flex items-center gap-0.5 border border-blue-200">
+                          <Loader2 size={8} className="animate-spin" /> Processing
+                        </span>
+                      )}
+                      {isFailed && (
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-50 text-red-600 border border-red-200">
+                          OCR Failed
+                        </span>
+                      )}
+                      {hasOcr && (
+                        <button
+                          onClick={() => setExpandedOcr(prev => ({ ...prev, [doc.id]: !prev[doc.id] }))}
+                          className="text-[9px] font-bold px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors flex items-center gap-0.5 border border-indigo-200"
+                        >
+                          <BookOpen size={8} />
+                          {isExpanded ? 'Hide Text' : 'View Text'}
+                        </button>
+                      )}
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded
+                        ${doc.scanStatus === 'clean'    ? 'bg-green-100 text-green-700' :
+                          doc.scanStatus === 'rejected' ? 'bg-red-100 text-red-700' :
+                                                          'bg-amber-100 text-amber-700'}`}>
+                        {doc.scanStatus}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* OCR Extracted Text Display */}
+                  {hasOcr && isExpanded && (
+                    <div className="border-t border-slate-100 px-3 py-2 bg-white space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-0.5">
+                          <Bot size={10} className="text-indigo-500" /> Extracted Text (GLM-OCR)
+                        </span>
+                        <button
+                          onClick={() => handleCopyDoc(doc.id, doc.ocrText || '')}
+                          className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors"
+                        >
+                          {copiedDocId === doc.id ? 'Copied!' : 'Copy'}
+                        </button>
+                      </div>
+                      <pre className="text-[10px] text-slate-600 font-mono whitespace-pre-wrap bg-slate-50 p-2 rounded border border-slate-200 max-h-40 overflow-y-auto leading-normal">
+                        {doc.ocrText}
+                      </pre>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

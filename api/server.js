@@ -35,6 +35,7 @@ const envSchema = z.object({
   AI_MODEL: z.string().min(1).default('gemma4:e4b'),
   PORT: z.string().regex(/^\d+$/).default('3100'),
   WYOMING_BRIDGE: z.string().url().default('http://wyoming-bridge:10500'),
+  WHISPER_ENDPOINT: z.string().url().optional(),
   AI_KILL_SWITCH: z.string().optional().default('false'),
   APP_URL: z.string().url().optional(),
 });
@@ -53,6 +54,7 @@ const OLLAMA_GENERATE = env.OLLAMA_GENERATE;
 const AI_MODEL        = env.AI_MODEL;
 const PORT            = parseInt(env.PORT, 10);
 const WYOMING_BRIDGE  = env.WYOMING_BRIDGE;
+const WHISPER_ENDPOINT = env.WHISPER_ENDPOINT || env.WYOMING_BRIDGE;
 
 // IMDA Agentic AI Framework Dim.1 — Emergency AI kill switch
 const AI_KILL_SWITCH  = env.AI_KILL_SWITCH.toLowerCase() === 'true';
@@ -240,9 +242,11 @@ RULE: If a Resident's message covers multiple issues, address each one and name 
 
 
 **PRIME DIRECTIVE: LANGUAGE MIRRORING — NON-NEGOTIABLE**
-Detect what language the Resident uses. Reply ONLY in that language.
+Detect what language the Resident uses based on the overall sentence context, and reply ONLY in that language:
 
-- **Singlish** → Authentic Singlish ONLY. Use: lah, leh, lor, sia, wah, aiyo, hor. Natural warmth, NOT performed auntie-speak. NEVER reply in formal English if they write Singlish.
+- **Singlish vs. Malay Boundary**: 
+  * Singlish often includes a small percentage of Malay loanwords (e.g. "tolong", "makan", "habis") mixed with English words and grammar. If the Resident writes mostly English with a few Malay words or particles, treat this as **Singlish**. Do NOT reply in Malay. Reply in authentic, empathetic Singlish (using occasional particles like lah, leh, lor, hor).
+  * Only reply in **entirely Malay** if the Resident's input is primarily written in Malay (where Malay words and grammar form the majority of the sentence).
 - **Mandarin / 中文** → Chinese characters ONLY. No pinyin. Zero English words.
 - **Malay / Bahasa** → ENTIRELY Malay. Zero English words. Use SINGAPORE agency names — they are used in Singapore too.
 - **Tamil / தமிழ்** → Tamil script ONLY. Zero English words.
@@ -300,8 +304,37 @@ function detectLang(text) {
   if (!text) return 'unknown';
   if (/[\u4e00-\u9fff]/.test(text)) return 'zh';
   if (/[\u0b80-\u0bff]/.test(text)) return 'ta';
-  if (/\b(lah|leh|lor|sia|wah|aiyo|hor)\b/i.test(text)) return 'singlish';
-  if (/\b(saya|awak|anda|boleh|tidak|untuk|dengan|yang|ini|itu)\b/i.test(text)) return 'ms';
+
+  const clean = text.toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?]/g, "");
+  const words = clean.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return 'en';
+
+  const malaySet = new Set(['saya', 'awak', 'anda', 'boleh', 'tidak', 'untuk', 'dengan', 'yang', 'ini', 'itu', 'tolong', 'apa', 'nak', 'kamu', 'kami', 'kita', 'mereka', 'dia', 'dan', 'ke', 'di', 'dari', 'bukan', 'ya', 'baik', 'sangat', 'buat', 'kerja']);
+  const singlishSet = new Set(['lah', 'leh', 'lor', 'sia', 'wah', 'aiyo', 'hor', 'leh', 'meh', 'siah', 'sian', 'chope', 'kiasu', 'kiaseh']);
+
+  let malayCount = 0;
+  let singlishCount = 0;
+  let englishCount = 0;
+
+  for (const w of words) {
+    if (malaySet.has(w)) {
+      malayCount++;
+    } else if (singlishSet.has(w)) {
+      singlishCount++;
+    } else {
+      englishCount++;
+    }
+  }
+
+  const totalMarkers = malayCount + englishCount + singlishCount;
+  const malayRatio = malayCount / totalMarkers;
+
+  if (malayRatio > 0.35 && malayCount > singlishCount) {
+    return 'ms';
+  }
+  if (singlishCount > 0 || (malayCount > 0 && englishCount > 0)) {
+    return 'singlish';
+  }
   return 'en';
 }
 
@@ -847,6 +880,70 @@ app.post('/api/ai/causality', async (req, res) => {
 // service to docker-compose.yml. See git history for full code.
 // ═══════════════════════════════════════════════════════════════
 
+// ── POST /api/ai/ocr ──────────────────────────────────────────
+// OCR: accepts base64 image data → Ollama glm-ocr → transcription text
+// Audit: OCR_PROCESS or OCR_ERROR
+app.post('/api/ai/ocr', async (req, res) => {
+  const ipHash = crypto.createHash('sha256').update(req.ip || '').digest('hex').slice(0, 12);
+  if (!rateLimit(ipHash, 30, 60_000)) {
+    auditLog('RATE_LIMIT', { endpoint: '/api/ai/ocr', ipHash });
+    return res.status(429).json({ error: 'Rate limit exceeded' });
+  }
+
+  const { image, mimeType, sessionId } = req.body;
+  if (!image) {
+    return res.status(400).json({ error: 'No image data provided' });
+  }
+
+  // Ollama expects raw base64 data without metadata prefix
+  const rawBase64 = image.replace(/^data:image\/[a-zA-Z]+;base64,/, '');
+
+  try {
+    const ocrUrl = OLLAMA_GENERATE;
+    const resp = await fetch(ocrUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'glm-ocr:latest',
+        prompt: 'Text Recognition:',
+        images: [rawBase64],
+        stream: false,
+        options: { temperature: 0.1 }
+      }),
+      signal: AbortSignal.timeout(60_000),
+    });
+
+    if (!resp.ok) {
+      throw new Error(`Ollama OCR request failed: ${resp.status}`);
+    }
+
+    const data = await resp.json();
+    let text = (data.response || '').trim();
+
+    // Clean up backtick loops or markdown codeblock wrappers if model returned them
+    text = text.replace(/^```markdown\s*/i, '')
+               .replace(/^```\s*/, '')
+               .replace(/```$/, '')
+               .trim();
+
+    auditLog('OCR_PROCESS', {
+      sessionId,
+      ipHash,
+      mimeType,
+      inputLength: image.length,
+      outputLength: text.length,
+      model: 'glm-ocr:latest'
+    });
+
+    return res.json({ text });
+
+  } catch (err) {
+    console.error('[ocr] GLM-OCR error:', err.message);
+    auditLog('OCR_ERROR', { sessionId, ipHash, errorMessage: err.message });
+    return res.status(502).json({ error: `OCR service error: ${err.message}` });
+  }
+});
+
 // ── POST /api/ai/transcribe ───────────────────────────────────
 // STT: accepts audio file → Wyoming Bridge → transcription text
 // Audit: STT_TRANSCRIBE or STT_ERROR
@@ -872,7 +969,7 @@ app.post('/api/ai/transcribe', upload.single('audio'), async (req, res) => {
       contentType: req.file.mimetype || 'audio/webm',
     });
 
-    const bridgeUrl = new URL('/transcribe', WYOMING_BRIDGE);
+    const bridgeUrl = new URL('/transcribe', WHISPER_ENDPOINT);
     const bridgeRes = await fetch(bridgeUrl.toString(), {
       method: 'POST',
       body: form,
@@ -888,6 +985,7 @@ app.post('/api/ai/transcribe', upload.single('audio'), async (req, res) => {
 
     const data = await bridgeRes.json();
     const maskedText = maskPII(data.text || '');
+    const isM4Pro = WHISPER_ENDPOINT.includes('192.168.0.8') || WHISPER_ENDPOINT.includes('100.95.235.61');
 
     auditLog('STT_TRANSCRIBE', {
       sessionId,
@@ -895,7 +993,7 @@ app.post('/api/ai/transcribe', upload.single('audio'), async (req, res) => {
       audioSizeBytes,
       detectedLanguage: data.language || 'unknown',
       transcriptionText: maskedText.slice(0, 500),
-      whisperModel: 'faster-whisper-small-int8',
+      whisperModel: isM4Pro ? 'whisper-large-v3-mps' : 'faster-whisper-small-int8',
       inputLen: audioSizeBytes,
       outputLen: (data.text || '').length,
     });

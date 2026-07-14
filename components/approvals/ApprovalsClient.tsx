@@ -46,6 +46,8 @@ export interface UploadedDocument {
   mime_type:       string;
   file_size_bytes: number;
   scan_status:     string;
+  ocr_text?:       string | null;
+  ocr_status?:     string;
   uploaded_at:     string;
 }
 
@@ -294,6 +296,9 @@ function AIAnalysisTab({ c }: { c: ApprovalCase }) {
 // ── Tab: Documents ────────────────────────────────────────────
 
 function DocumentsTab({ c }: { c: ApprovalCase }) {
+  const [expandedOcr, setExpandedOcr] = useState<Record<number, boolean>>({});
+  const [copiedDocId, setCopiedDocId] = useState<number | null>(null);
+
   if (c.requirements.length === 0 && c.uploads.length === 0) {
     return (
       <div className="rounded-xl border border-slate-100 bg-slate-50 p-8 text-center">
@@ -303,6 +308,12 @@ function DocumentsTab({ c }: { c: ApprovalCase }) {
       </div>
     );
   }
+
+  const handleCopy = (docId: number, text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedDocId(docId);
+    setTimeout(() => setCopiedDocId(null), 2000);
+  };
 
   return (
     <div className="space-y-4">
@@ -348,20 +359,71 @@ function DocumentsTab({ c }: { c: ApprovalCase }) {
           <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">
             Uploaded Files ({c.uploads.length})
           </p>
-          <div className="space-y-1.5">
-            {c.uploads.map(doc => (
-              <div key={doc.id}
-                className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 flex items-center gap-3">
-                <FileText size={14} className="text-slate-400 shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-slate-800 truncate">{doc.filename}</p>
-                  <p className="text-xs text-slate-400">{fmtBytes(doc.file_size_bytes)} · {relDays(doc.uploaded_at)}</p>
+          <div className="space-y-2">
+            {c.uploads.map(doc => {
+              const hasOcr = doc.ocr_status === 'completed' && doc.ocr_text;
+              const isProcessing = doc.ocr_status === 'processing';
+              const isFailed = doc.ocr_status === 'failed';
+              const isExpanded = !!expandedOcr[doc.id];
+
+              return (
+                <div key={doc.id} className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
+                  <div className="px-4 py-3 flex items-center justify-between gap-3 bg-slate-50/50">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <FileText size={16} className="text-slate-400 shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-slate-800 truncate">{doc.filename}</p>
+                        <p className="text-xs text-slate-400">{fmtBytes(doc.file_size_bytes)} · {relDays(doc.uploaded_at)}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {isProcessing && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-600 flex items-center gap-1 border border-blue-200">
+                          <Loader2 size={10} className="animate-spin" /> OCR Processing
+                        </span>
+                      )}
+                      {isFailed && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-red-50 text-red-600 border border-red-200">
+                          OCR Failed
+                        </span>
+                      )}
+                      {hasOcr && (
+                        <button
+                          onClick={() => setExpandedOcr(prev => ({ ...prev, [doc.id]: !prev[doc.id] }))}
+                          className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors flex items-center gap-1 border border-indigo-200 animate-fade-in"
+                        >
+                          <BookOpen size={10} />
+                          {isExpanded ? 'Hide Extracted Text' : 'View Extracted Text'}
+                        </button>
+                      )}
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg ${SCAN_PILL[doc.scan_status] ?? ''}`}>
+                        {doc.scan_status}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* OCR Extracted Text Display */}
+                  {hasOcr && isExpanded && (
+                    <div className="border-t border-slate-100 px-4 py-3 bg-white space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1">
+                          <Bot size={11} className="text-indigo-500" /> AI Extracted Text (GLM-OCR)
+                        </span>
+                        <button
+                          onClick={() => handleCopy(doc.id, doc.ocr_text || '')}
+                          className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors"
+                        >
+                          {copiedDocId === doc.id ? 'Copied!' : 'Copy Text'}
+                        </button>
+                      </div>
+                      <pre className="text-xs text-slate-600 font-mono whitespace-pre-wrap bg-slate-50 p-3 rounded-lg border border-slate-200 max-h-60 overflow-y-auto leading-relaxed">
+                        {doc.ocr_text}
+                      </pre>
+                    </div>
+                  )}
                 </div>
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg ${SCAN_PILL[doc.scan_status] ?? ''}`}>
-                  {doc.scan_status}
-                </span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

@@ -97,6 +97,61 @@ function stripPDFActiveContent(buf: Buffer): Buffer {
   return Buffer.from(text, 'binary');
 }
 
+// ── Background OCR Processor ──────────────────────────────────
+// Sends images to mps-ai-proxy /api/ai/ocr asynchronously
+async function triggerOCR(documentId: number, fileBuffer: Buffer, mime: string) {
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(mime)) {
+    return;
+  }
+
+  // Update status to processing
+  await db(
+    `UPDATE case_documents SET ocr_status = 'processing' WHERE id = $1`,
+    [documentId]
+  ).catch(err => console.error(`[ocr] Failed to update ocr_status to processing:`, err));
+
+  try {
+    const base64 = fileBuffer.toString('base64');
+    const proxyUrl = process.env.AI_PROXY_URL ?? 'http://mps-ai-proxy:3103';
+    
+    const res = await fetch(`${proxyUrl}/api/ai/ocr`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        image: `data:${mime};base64,${base64}`,
+        mimeType: mime,
+        sessionId: `ocr-${documentId}`
+      }),
+      signal: AbortSignal.timeout(60_000)
+    });
+
+    if (!res.ok) {
+      throw new Error(`AI proxy returned status ${res.status}`);
+    }
+
+    const data = await res.json();
+    const extractedText = data.text || '';
+
+    // Save OCR result in database
+    await db(
+      `UPDATE case_documents 
+       SET ocr_text = $1, ocr_status = 'completed' 
+       WHERE id = $2`,
+      [extractedText, documentId]
+    );
+    console.log(`[ocr] Extracted ${extractedText.length} characters for document ${documentId}`);
+
+  } catch (err: any) {
+    console.error(`[ocr] Error processing document ${documentId}:`, err.message);
+    await db(
+      `UPDATE case_documents 
+       SET ocr_status = 'failed' 
+       WHERE id = $1`,
+      [documentId]
+    ).catch(dbErr => console.error(`[ocr] Failed to set status to failed:`, dbErr));
+  }
+}
+
 // ── Route handler ─────────────────────────────────────────────
 
 export async function POST(
@@ -195,6 +250,13 @@ export async function POST(
 
   // 9. Mark token used (single-use enforced)
   await markTokenUsed(tokenRecord.id);
+
+  // 10. Trigger OCR asynchronously in the background for images
+  if (documentId && ['image/jpeg', 'image/png', 'image/webp'].includes(mime)) {
+    triggerOCR(documentId, fileBuffer, mime).catch(err => {
+      console.error('[ocr] Background OCR trigger error:', err);
+    });
+  }
 
   return NextResponse.json({
     success:    true,

@@ -42,6 +42,8 @@ export interface CaseDocument {
   fileSizeBytes:  number;
   scanStatus:     'pending' | 'clean' | 'rejected';
   scanDetail?:    string;
+  ocrText?:       string;
+  ocrStatus?:     'pending' | 'processing' | 'completed' | 'failed';
   uploadedAt:     string;
 }
 
@@ -123,10 +125,11 @@ export async function getDocumentRequirements(caseId: number): Promise<{
       id: number; case_id: number; requirement_id: number | null;
       token_id: number | null; filename: string; mime_type: string;
       file_size_bytes: number; scan_status: string; scan_detail: string | null;
+      ocr_text: string | null; ocr_status: string;
       uploaded_at: string;
     }>(
       `SELECT id, case_id, requirement_id, token_id, filename, mime_type,
-              file_size_bytes, scan_status, scan_detail, uploaded_at
+              file_size_bytes, scan_status, scan_detail, ocr_text, ocr_status, uploaded_at
        FROM case_documents
        WHERE case_id = $1
        ORDER BY uploaded_at DESC`,
@@ -157,6 +160,8 @@ export async function getDocumentRequirements(caseId: number): Promise<{
       fileSizeBytes:  d.file_size_bytes,
       scanStatus:     d.scan_status as 'pending' | 'clean' | 'rejected',
       scanDetail:     d.scan_detail ?? undefined,
+      ocrText:        d.ocr_text ?? undefined,
+      ocrStatus:      d.ocr_status as 'pending' | 'processing' | 'completed' | 'failed',
       uploadedAt:     d.uploaded_at,
     })),
   };

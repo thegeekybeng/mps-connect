@@ -61,10 +61,11 @@ async function fetchPendingCases(constituencyId: number | null, role: UserRole):
     db<{
       id: number; case_id: number; requirement_id: number | null;
       filename: string; mime_type: string; file_size_bytes: number;
-      scan_status: string; uploaded_at: string;
+      scan_status: string; ocr_text: string | null; ocr_status: string;
+      uploaded_at: string;
     }>(
       `SELECT id, case_id, requirement_id, filename, mime_type,
-              file_size_bytes, scan_status, uploaded_at
+              file_size_bytes, scan_status, ocr_text, ocr_status, uploaded_at
        FROM case_documents WHERE case_id = ANY($1)`,
       [ids]
     ),
