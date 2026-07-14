@@ -102,7 +102,7 @@ export async function generateFactDraft(conversation: Array<{ role: string; cont
 }
 
 export async function submitCase(input: {
-  conversation: Array<{ role: string; content: string }>;
+  conversation: Array<{ role: string; content: string; is_stt?: boolean }>;
   residentName: string;
   phone?: string;
   constituencyId: number;
@@ -203,6 +203,15 @@ export async function submitCase(input: {
        VALUES ($1, 'case_created', 'create', 'resident_self_service', $2)`,
       [caseRow.id, JSON.stringify({ source: 'chat', category, urgency })]
     );
+
+    // Step 3b: Save conversation transcript
+    for (const msg of conversation) {
+      await dbOne(
+        `INSERT INTO case_messages (case_id, role, content, is_stt)
+         VALUES ($1, $2, $3, $4)`,
+        [caseRow.id, msg.role, msg.content, !!msg.is_stt]
+      );
+    }
 
     // Step 4: Enqueue full Causality Engine pipeline (async, fire-and-forget)
     // This runs the 3-stage pipeline in the background so that when staff

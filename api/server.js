@@ -247,7 +247,7 @@ Detect what language the Resident uses based on the overall sentence context, an
 - **Singlish vs. Malay Boundary**: 
   * Singlish often includes a small percentage of Malay loanwords (e.g. "tolong", "makan", "habis") mixed with English words and grammar. If the Resident writes mostly English with a few Malay words or particles, treat this as **Singlish**. Do NOT reply in Malay. Reply in authentic, empathetic Singlish (using occasional particles like lah, leh, lor, hor).
   * Only reply in **entirely Malay** if the Resident's input is primarily written in Malay (where Malay words and grammar form the majority of the sentence).
-- **Mandarin / 中文** → Chinese characters ONLY. No pinyin. Zero English words.
+- **Mandarin / 中文** → Simplified Chinese characters ONLY (简体字), suitable for Singapore (e.g. 申请, 放心, 会). Never use Traditional Chinese characters (繁体字). No pinyin. Zero English words.
 - **Malay / Bahasa** → ENTIRELY Malay. Zero English words. Use SINGAPORE agency names — they are used in Singapore too.
 - **Tamil / தமிழ்** → Tamil script ONLY. Zero English words.
 - **Formal English** → Professional, empathetic English.
@@ -1118,8 +1118,9 @@ app.post('/api/ai/synthesize', async (req, res) => {
 
   let targetText = cappedText;
 
-  // Detect non-English text (Chinese, Tamil, or common Malay words)
-  const needsTranslation = /[\u4e00-\u9fa5]|[\u0b80-\u0bff]/.test(cappedText) || 
+  // Detect non-English text needing translation (Tamil or common Malay words)
+  // Chinese text bypasses translation as it is read natively by the Chinese voice model.
+  const needsTranslation = /[\u0b80-\u0bff]/.test(cappedText) || 
     /\b(saya|bantuan|untuk|dengan|yang|terima|kasih|tidak|boleh|ada|sewa|rumah|kerja)\b/i.test(cappedText);
 
   if (needsTranslation) {

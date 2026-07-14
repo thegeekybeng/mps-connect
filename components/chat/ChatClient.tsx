@@ -259,6 +259,7 @@ export default function ChatClient({ mpName, constituency, division, constituenc
     const conversation = messages.map(m => ({
       role: m.role,
       content: m.content,
+      is_stt: m.inputMethod === 'voice',
     }));
 
     const result = await submitCase({
