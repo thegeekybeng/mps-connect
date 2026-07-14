@@ -1101,6 +1101,83 @@ function preprocessTtsText(text) {
     .trim();
 }
 
+function preprocessChineseTtsText(text) {
+  if (!text) return '';
+  const digitMap = {
+    '0': '零', '1': '一', '2': '二', '3': '三', '4': '四',
+    '5': '五', '6': '六', '7': '七', '8': '八', '9': '九'
+  };
+
+  // 1. Spoken Chinese expansions for acronyms
+  let processed = text
+    .replace(/\bSSO\b/g, '社会服务局')
+    .replace(/\bCDC\b/g, '社区发展局')
+    .replace(/\bHDB\b/g, '建屋局')
+    .replace(/\bCPF\b/g, '公积金局')
+    .replace(/\bComCare\b/g, '社区关怀计划')
+    .replace(/\bLegal Aid Bureau\b/g, '法律援助局')
+    .replace(/cdc\.org\.sg/g, '社区发展局官网');
+
+  // Remove redundant parentheses e.g. "社会服务局 (社会服务局)" -> "社会服务局"
+  processed = processed
+    .replace(/社会服务局\s*\(社会服务局\)/g, '社会服务局')
+    .replace(/社区发展局\s*\(社区发展局\)/g, '社区发展局')
+    .replace(/建屋局\s*\(建屋局\)/g, '建屋局')
+    .replace(/公积金局\s*\(公积金局\)/g, '公积金局')
+    .replace(/法律援助局\s*\(法律援助局\)/g, '法律援助局');
+
+  // 2. Format phone numbers as spoken Chinese digit-by-digit
+  processed = processed.replace(/\b(1800|800)[- ]?(\d{3,4})[- ]?(\d{4})\b/g, (match, p1, p2, p3) => {
+    const toSpoken = (str) => str.split('').map(d => digitMap[d] || d).join('');
+    return `${toSpoken(p1)}，${toSpoken(p2)}，${toSpoken(p3)}`;
+  });
+
+  return processed;
+}
+
+function preprocessMalayTtsText(text) {
+  if (!text) return '';
+  const digitMap = {
+    '0': 'kosong', '1': 'satu', '2': 'dua', '3': 'tiga', '4': 'empat',
+    '5': 'lima', '6': 'enam', '7': 'tujuh', '8': 'lapan', '9': 'sembilan'
+  };
+
+  // 1. Spaced English letters for acronyms to help Indonesian model pronounce them
+  let processed = text
+    .replace(/\bSSO\b/g, 'S S O')
+    .replace(/\bCDC\b/g, 'C D C')
+    .replace(/\bHDB\b/g, 'H D B')
+    .replace(/\bCPF\b/g, 'C P F')
+    .replace(/\bComCare\b/g, 'ComCare')
+    .replace(/\bLegal Aid Bureau\b/g, 'Biro Bantuan Guaman')
+    .replace(/cdc\.org\.sg/g, 'laman web C D C');
+
+  // 2. Format phone numbers as spoken Malay digits
+  processed = processed.replace(/\b(1800|800)[- ]?(\d{3,4})[- ]?(\d{4})\b/g, (match, p1, p2, p3) => {
+    const toSpoken = (str) => str.split('').map(d => digitMap[d] || d).join(' ');
+    return `${toSpoken(p1)}, ${toSpoken(p2)}, ${toSpoken(p3)}`;
+  });
+
+  return processed;
+}
+
+function preprocessTamilTtsText(text) {
+  if (!text) return '';
+  const digitMap = {
+    '0': 'பூஜ்யம்', '1': 'ஒன்று', '2': 'இரண்டு', '3': 'மூன்று', '4': 'நான்கு',
+    '5': 'ஐந்து', '6': 'ஆறு', '7': 'ஏழு', '8': 'எட்டு', '9': 'ஒன்பது'
+  };
+
+  // 1. Spoken Tamil digit-by-digit for phone numbers
+  let processed = text.replace(/\b(1800|800)[- ]?(\d{3,4})[- ]?(\d{4})\b/g, (match, p1, p2, p3) => {
+    const toSpoken = (str) => str.split('').map(d => digitMap[d] || d).join(' ');
+    return `${toSpoken(p1)}, ${toSpoken(p2)}, ${toSpoken(p3)}`;
+  });
+
+  return processed;
+}
+
+
 app.post('/api/ai/synthesize', async (req, res) => {
   const ipHash = crypto.createHash('sha256').update(req.ip || '').digest('hex').slice(0, 12);
   if (!rateLimit(ipHash, 30, 60_000)) {
@@ -1118,39 +1195,21 @@ app.post('/api/ai/synthesize', async (req, res) => {
 
   let targetText = cappedText;
 
-  // Detect non-English text needing translation (Tamil or common Malay words)
-  // Chinese text bypasses translation as it is read natively by the Chinese voice model.
-  const needsTranslation = /[\u0b80-\u0bff]/.test(cappedText) || 
-    /\b(saya|bantuan|untuk|dengan|yang|terima|kasih|tidak|boleh|ada|sewa|rumah|kerja)\b/i.test(cappedText);
+  // Pre-process final text natively depending on the detected language
+  const isChinese = /[\u4e00-\u9fa5]/.test(targetText);
+  const isTamil   = /[\u0b80-\u0bff]/.test(targetText);
+  const isMalay   = /\b(saya|bantuan|untuk|dengan|yang|terima|kasih|tidak|boleh|ada|sewa|rumah|kerja|kami|anda|selamat|petang|pagi|malam|soalan)\b/i.test(targetText);
 
-  if (needsTranslation) {
-    try {
-      const ollamaRes = await fetch(OLLAMA_GENERATE, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: AI_MODEL,
-          prompt: `Translate this message to clear, spoken English. Return ONLY the English translation, without any extra text or conversational filler:\n\n${cappedText}`,
-          stream: false,
-          options: { num_ctx: 8192 },
-        }),
-        signal: AbortSignal.timeout(15_000),
-      });
-
-      if (ollamaRes.ok) {
-        const transData = await ollamaRes.json();
-        const translated = (transData.response || '').trim();
-        if (translated) {
-          targetText = translated;
-        }
-      }
-    } catch (err) {
-      console.error('[synthesize] Non-English translation failed:', err);
-    }
+  let ttsText;
+  if (isChinese) {
+    ttsText = preprocessChineseTtsText(targetText);
+  } else if (isTamil) {
+    ttsText = preprocessTamilTtsText(targetText);
+  } else if (isMalay) {
+    ttsText = preprocessMalayTtsText(targetText);
+  } else {
+    ttsText = preprocessTtsText(targetText);
   }
-
-  // Pre-process final English text so TTS reads clean natural text
-  const ttsText = preprocessTtsText(targetText);
 
   try {
     const bridgeUrl = new URL('/synthesize', WYOMING_BRIDGE);
@@ -1169,14 +1228,27 @@ app.post('/api/ai/synthesize', async (req, res) => {
 
     const audioBuffer = Buffer.from(await bridgeRes.arrayBuffer());
 
+    let modelName = 'en_US-hfc_female-medium';
+    let voiceCode = 'en_US';
+    if (isChinese) {
+      modelName = 'zh_CN-huayan-medium';
+      voiceCode = 'zh_CN';
+    } else if (isTamil) {
+      modelName = 'ta_IN-rasa_female-medium';
+      voiceCode = 'ta_IN';
+    } else if (isMalay) {
+      modelName = 'id_ID-news_tts-medium';
+      voiceCode = 'ms_MY';
+    }
+
     auditLog('TTS_SYNTHESIZE', {
       sessionId,
       ipHash,
       inputText: maskPII(cappedText).slice(0, 300),
       inputLen: cappedText.length,
       outputLen: audioBuffer.length,
-      piperModel: 'en_US-hfc_female-medium',
-      voice: 'en_US',
+      piperModel: modelName,
+      voice: voiceCode,
     });
 
     res.set({
