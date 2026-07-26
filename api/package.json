@@ -14,7 +14,7 @@
     "bullmq":                                    "^5.7.8",
     "clamscan":                                  "^2.2.1",
     "cookie-parser":                             "^1.4.7",
-    "express":                                   "^4.18.2",
+    "express":                                   "^5.2.1",
     "form-data":                                 "^4.0.0",
     "ioredis":                                   "^5.4.1",
     "jose":                                      "^5.0.0",
