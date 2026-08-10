@@ -985,7 +985,7 @@ app.post('/api/ai/transcribe', upload.single('audio'), async (req, res) => {
 
     const data = await bridgeRes.json();
     const maskedText = maskPII(data.text || '');
-    const isM4Pro = WHISPER_ENDPOINT.includes('192.168.0.8') || WHISPER_ENDPOINT.includes('100.95.235.61');
+    const isM4Pro = WHISPER_ENDPOINT.includes('100.95.235.61') || WHISPER_ENDPOINT.includes('192.168.0.8') || WHISPER_ENDPOINT.includes('100.95.235.61');
 
     auditLog('STT_TRANSCRIBE', {
       sessionId,
