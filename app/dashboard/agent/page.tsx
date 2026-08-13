@@ -68,7 +68,7 @@ export default async function AgentPage() {
 
         {/* Model */}
         <span className="gov-badge" style={{ background: 'var(--gov-primary-50)', color: 'var(--gov-primary)', borderColor: 'var(--gov-primary-100)' }}>
-          <Cpu size={12} /> {model.split(':')[0]}:{model.split(':')[1]}
+          <Cpu size={12} /> {model.replace(/^hf\.co\/[^\/]+\//, '').replace(/:latest$/, '').replace(/-/g, ' ')}
         </span>
 
         {/* Max urgency */}

@@ -281,6 +281,30 @@ export async function prewarmAgentModel(): Promise<{ success: boolean }> {
   }
 }
 
+export async function getOllamaModels(): Promise<string[]> {
+  const session = await requireAuth();
+  if (!can(session.role, 'letters:approve')) return [];
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+
+  try {
+    const res = await fetch(`${OLLAMA_BASE}/api/tags`, {
+      signal: controller.signal,
+      cache: 'no-store',
+    });
+    clearTimeout(timer);
+
+    if (!res.ok) throw new Error(`Ollama returned status ${res.status}`);
+    const data = await res.json() as { models?: Array<{ name: string }> };
+    return (data.models || []).map(m => m.name);
+  } catch (err) {
+    clearTimeout(timer);
+    console.error('[getOllamaModels] Failed to fetch models:', err instanceof Error ? err.message : err);
+    return [];
+  }
+}
+
 // ── Override a previous agent decision ──────────────────────────
 export async function overrideAgentDecision(decisionId: number): Promise<{ success: boolean }> {
   const session = await requireAuth();

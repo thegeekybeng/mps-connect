@@ -9,9 +9,8 @@ const ALL_CATEGORIES = [
   'Healthcare', 'Education', 'Infrastructure', 'Other'
 ];
 
-const MODEL_OPTIONS = [
-  {
-    value: 'gemma4:e2b',
+const KNOWN_MODELS: Record<string, { label: string; tag: string; tagColor: string; icon: any; iconColor: string; desc: string }> = {
+  'gemma4:e2b': {
     label: 'Gemma 4 2B',
     tag: 'Recommended',
     tagColor: 'bg-emerald-100 text-emerald-700',
@@ -19,8 +18,7 @@ const MODEL_OPTIONS = [
     iconColor: 'text-emerald-500',
     desc: 'Fastest. Works reliably in this environment.',
   },
-  {
-    value: 'gemma4:12b-mlx',
+  'gemma4:12b-mlx': {
     label: 'Gemma 4 12B MLX',
     tag: 'Apple Silicon',
     tagColor: 'bg-blue-100 text-blue-700',
@@ -28,8 +26,7 @@ const MODEL_OPTIONS = [
     iconColor: 'text-blue-500',
     desc: 'Balanced speed and reasoning on MLX.',
   },
-  {
-    value: 'qwen3.6:27b',
+  'qwen3.6:27b': {
     label: 'Qwen 3.6 27B',
     tag: 'Best reasoning',
     tagColor: 'bg-violet-100 text-violet-700',
@@ -37,15 +34,38 @@ const MODEL_OPTIONS = [
     iconColor: 'text-violet-500',
     desc: 'Highest quality. Slower cold start.',
   },
-] as const;
+};
 
 interface Props {
   initial:  AgentPreferences | null;
   userName: string;
   userRole: string;
+  availableModels: string[];
 }
 
-export default function AgentPreferencesForm({ initial }: Props) {
+export default function AgentPreferencesForm({ initial, availableModels }: Props) {
+  const modelsList = availableModels.length > 0 ? availableModels : ['gemma4:e2b', 'gemma4:12b-mlx', 'qwen3.6:27b'];
+
+  const modelOptions = modelsList.map(name => {
+    if (KNOWN_MODELS[name]) {
+      return { value: name, ...KNOWN_MODELS[name] };
+    }
+    // Clean up HF model labels or custom model names for nice rendering
+    const cleanLabel = name
+      .replace(/^hf\.co\/[^\/]+\//, '')
+      .replace(/:latest$/, '')
+      .replace(/-/g, ' ');
+    return {
+      value: name,
+      label: cleanLabel,
+      tag: 'Ollama model',
+      tagColor: 'bg-slate-100 text-slate-700 border-slate-200',
+      icon: Bot,
+      iconColor: 'text-slate-500',
+      desc: 'Installed model on Mac Mini M4 Pro.',
+    };
+  });
+
   const [enabled,       setEnabled]       = useState(initial?.enabled ?? false);
   const [model,         setModel]         = useState(initial?.preferredModel ?? 'gemma4:e2b');
   const [categories,    setCategories]    = useState<string[]>(initial?.autoApproveCategories ?? []);
@@ -106,7 +126,7 @@ export default function AgentPreferencesForm({ initial }: Props) {
       <div className="px-6 py-5 border-b border-slate-50">
         <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Model</p>
         <div className="space-y-2">
-          {MODEL_OPTIONS.map(opt => {
+          {modelOptions.map(opt => {
             const Icon = opt.icon;
             const active = model === opt.value;
             return (

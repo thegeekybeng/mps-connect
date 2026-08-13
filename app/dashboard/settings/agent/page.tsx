@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { requireAuth, type UserRole } from '@/lib/auth';
-import { getAgentPreferences } from '@/app/actions/agent';
+import { getAgentPreferences, getOllamaModels } from '@/app/actions/agent';
 import { can } from '@/lib/rbac';
 import { redirect } from 'next/navigation';
 import { db } from '@/lib/db';
@@ -9,6 +9,7 @@ import AgentRunPanel from '@/components/agent/AgentRunPanel';
 import { Bot, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 
+export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'AI Agent Settings — MPS Connect' };
 
 export default async function AgentSettingsPage() {
@@ -16,7 +17,7 @@ export default async function AgentSettingsPage() {
   if (!can(session.role, 'letters:approve')) redirect('/dashboard');
 
   const bypass = can(session.role, 'constituencies:read_all');
-  const [prefs, pendingCases] = await Promise.all([
+  const [prefs, pendingCases, availableModels] = await Promise.all([
     getAgentPreferences(session.userId),
     db<{ id: number; resident_name: string; category: string | null; urgency: string; summary: string | null }>(
       `SELECT id, resident_name, category, urgency, summary
@@ -28,6 +29,7 @@ export default async function AgentSettingsPage() {
          created_at DESC`,
       session.constituencyId && !bypass ? [session.constituencyId] : []
     ),
+    getOllamaModels(),
   ]);
 
   return (
@@ -56,6 +58,7 @@ export default async function AgentSettingsPage() {
         initial={prefs}
         userName={session.name}
         userRole={session.role}
+        availableModels={availableModels}
       />
     </div>
   );
