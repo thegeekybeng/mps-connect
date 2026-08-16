@@ -14,8 +14,7 @@ const cookieParser = require('cookie-parser');
 const multer       = require('multer');
 const FormData     = require('form-data');
 const { z }        = require('zod');
-const http         = require('http');
-
+const app = express();
 
 app.use(express.json({ limit: '512kb' }));
 app.use(express.urlencoded({ extended: false }));
