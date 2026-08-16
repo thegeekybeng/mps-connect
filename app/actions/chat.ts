@@ -7,6 +7,7 @@
 // =============================================================
 
 import { db, dbOne } from '@/lib/db';
+import { causalityQueue } from '@/lib/queue';
 
 const AI_PROXY = process.env.AI_PROXY_URL || 'http://mps-ai-proxy:3103';
 
@@ -226,23 +227,18 @@ export async function submitCase(input: {
         .map(m => `[${m.role.toUpperCase()}]: ${m.content}`)
         .join('\n');
 
-      // Fire-and-forget — do not await the full pipeline
-      fetch(`${AI_PROXY}/api/ai/causality/enqueue`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          caseId: caseRow.id,
-          transcript,
-          mpName: constRow?.mp_name || '',
-          constituency: constRow?.name || '',
-        }),
-        signal: AbortSignal.timeout(10_000),
-      }).catch(err => {
-        console.error('[submitCase] Causality enqueue failed (non-blocking):', err instanceof Error ? err.message : err);
+      // Add job directly to local BullMQ queue
+      await causalityQueue.add('causality-job', {
+        caseId: caseRow.id,
+        transcript,
+        mpName: constRow?.mp_name || '',
+        constituency: constRow?.name || '',
+        writerName: 'System Worker',
       });
-    } catch {
+      console.log(`[submitCase] Enqueued background causality job for case ${caseRow.id}`);
+    } catch (err) {
       // Causality enqueue failure must never block case submission
-      console.error('[submitCase] Failed to prepare causality enqueue (non-blocking)');
+      console.error('[submitCase] Failed to prepare causality enqueue (non-blocking):', err instanceof Error ? err.message : err);
     }
 
     // Step 5: Generate a public upload token for this case to allow document uploads
