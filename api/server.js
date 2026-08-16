@@ -15,6 +15,7 @@ const multer       = require('multer');
 const FormData     = require('form-data');
 const { z }        = require('zod');
 const app = express();
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 app.use(express.json({ limit: '512kb' }));
 app.use(express.urlencoded({ extended: false }));
