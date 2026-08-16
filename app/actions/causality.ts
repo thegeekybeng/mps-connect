@@ -19,8 +19,9 @@
 
 import { requireAuth }    from '@/lib/auth';
 import { can }            from '@/lib/rbac';
-import { dbOne, db }      from '@/lib/db';
+import { dbOne }          from '@/lib/db';
 import { revalidatePath } from 'next/cache';
+import { persistCausalityResult } from '@/lib/causality-persist';
 
 const AI_PROXY = process.env.AI_PROXY_URL ?? 'http://mps-ai-proxy:3103';
 
@@ -90,78 +91,15 @@ export async function runCausalityEngine(
 
   const { causalGraph, letters = [] } = payload;
 
-  // 1. Persist causal graph to case
-  await dbOne(
-    `UPDATE cases SET causal_graph = $1, updated_at = NOW() WHERE id = $2`,
-    [JSON.stringify(causalGraph), caseId]
-  );
-
-  // 2. Persist document requirements (replace existing)
-  const docReqs = (causalGraph.documentRequirements ?? []) as Array<{
-    agency:             string;
-    documentType:       string;
-    reason:             string;
-    relatedNodeIds?:    string[];
-    required?:          boolean;
-    sourceType?:        string;
-    sourceInstitution?: string;
-  }>;
-
-  // Delete existing requirements for this case before reinserting
-  await dbOne(`DELETE FROM document_requirements WHERE case_id = $1`, [caseId]);
-
-  let documentRequirementsSaved = 0;
-  for (const req of docReqs) {
-    if (!req.documentType || !req.agency) continue;
-    await dbOne(
-      `INSERT INTO document_requirements
-         (case_id, agency, document_type, reason, related_node_ids, required, source_type, source_institution)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-      [
-        caseId,
-        req.agency,
-        req.documentType,
-        req.reason ?? '',
-        req.relatedNodeIds ?? [],
-        req.required ?? true,
-        req.sourceType === 'government_request' ? 'government_request' : 'resident',
-        req.sourceInstitution ?? null,
-      ]
-    );
-    documentRequirementsSaved++;
-  }
-
-  // 3. Persist letters (replace existing drafts)
-  await db(
-    `DELETE FROM letters WHERE case_id = $1 AND status = 'draft'`,
-    [caseId]
-  );
-
-  let lettersCreated = 0;
-  for (const letter of letters) {
-    if (!letter.agency || !letter.content) continue;
-    await dbOne(
-      `INSERT INTO letters (case_id, agency, agency_label, content, status, generated_by)
-       VALUES ($1,$2,$3,$4,'draft',$5)`,
-      [caseId, letter.agency, letter.agencyLabel ?? null, letter.content, session.userId]
-    );
-    lettersCreated++;
-  }
-
-  // 4. Write audit event
-  await dbOne(
-    `INSERT INTO case_events (case_id, actor_id, actor_role, action, detail)
-     VALUES ($1,$2,$3,'causality_run',$4)`,
-    [
-      caseId,
-      session.userId,
-      session.role,
-      JSON.stringify({
-        lettersCreated,
-        documentRequirementsSaved,
-        urgency: (causalGraph.urgency as Record<string, unknown>)?.overall ?? 'Unknown',
-      }),
-    ]
+  // Transactionally persist results using consolidated adapter
+  const { lettersCreated, documentRequirementsSaved } = await persistCausalityResult(
+    caseId,
+    { causalGraph, letters },
+    {
+      id: session.userId,
+      role: session.role,
+      name: userRow?.name ?? 'Caseworker',
+    }
   );
 
   revalidatePath(`/dashboard/cases/${caseId}`);
