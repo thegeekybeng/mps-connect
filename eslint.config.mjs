@@ -6,7 +6,11 @@ const config = [
     ignores: [
       ".next/**",
       "node_modules/**",
-      "graphify-out/**"
+      "graphify-out/**",
+      "dist/**",
+      "venv/**",
+      ".venv/**",
+      "mps-connect_testers/**"
     ]
   }
 ];
