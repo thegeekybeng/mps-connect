@@ -23,7 +23,16 @@ export const redisConnection =
 
 export const causalityQueue =
   globalForQueue.causalityQueue ??
-  new Queue('causality', { connection: redisConnection });
+  new Queue('causality', {
+    connection: redisConnection,
+    defaultJobOptions: {
+      attempts: 3,
+      backoff: {
+        type: 'exponential',
+        delay: 5000,
+      },
+    },
+  });
 
 // Only start the worker in server environments where execution is active
 export const causalityWorker =
