@@ -15,14 +15,7 @@ const multer       = require('multer');
 const FormData     = require('form-data');
 const { z }        = require('zod');
 const http         = require('http');
-const { initDB, pool } = require('./db');
-const { causalityQueue } = require('./queue');
-const { writeAuditEvent } = require('./audit');  // immutable SQLite audit log
-const app          = express();
-const upload       = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
-// Initialize Database
-initDB();
 
 app.use(express.json({ limit: '512kb' }));
 app.use(express.urlencoded({ extended: false }));
@@ -1359,143 +1352,7 @@ app.get('/api/ai/voice-trail/:sessionId', async (req, res) => {
   }
 });
 
-// ── POST /api/ai/causality/enqueue ────────────────────────────
-// Enqueues a causality analysis job to BullMQ queue (ADR-014)
-app.post('/api/ai/causality/enqueue', async (req, res) => {
-  const { caseId, transcript, mpName, constituency, writerName } = req.body;
-  if (!caseId || !transcript) {
-    return res.status(400).json({ error: 'caseId and transcript are required' });
-  }
 
-  try {
-    const job = await causalityQueue.add('causality-job', {
-      caseId,
-      transcript,
-      mpName,
-      constituency,
-      writerName
-    });
-    console.log(`[Queue] Enqueued causality job ${job.id} for case ${caseId}`);
-    return res.json({ ok: true, jobId: job.id });
-  } catch (err) {
-    console.error('[Queue] Failed to enqueue causality job:', err.message);
-    return res.status(500).json({ error: 'Failed to enqueue causality job' });
-  }
-});
-
-// ── Async BullMQ Worker ───────────────────────────────────────
-// Processes causality analysis in the background to prevent server timeouts (ADR-014)
-const { Worker } = require('bullmq');
-const { connection } = require('./queue');
-
-const worker = new Worker('causality', async job => {
-  const { caseId, transcript, mpName, constituency, writerName } = job.data;
-  console.log(`[Worker] Running causality analysis for case ${caseId}`);
-  
-  // Verify case still exists in DB
-  const checkCase = await pool.query('SELECT id FROM cases WHERE id = $1', [caseId]);
-  if (checkCase.rows.length === 0) {
-    console.warn(`[Worker] Case ${caseId} does not exist in database. Skipping.`);
-    return;
-  }
-
-  // Call the causality pipeline internally
-  const url = `http://127.0.0.1:${PORT}/api/ai/causality`;
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      conversation: [{ role: 'user', content: transcript }],
-      mpName,
-      constituency,
-      writerName
-    }),
-    signal: AbortSignal.timeout(180_000),
-  });
-
-  if (!resp.ok) {
-    throw new Error(`Causality API request failed with status ${resp.status}`);
-  }
-
-  const payload = await resp.json();
-  const { causalGraph, letters = [] } = payload;
-
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-
-    // 1. Update causal graph on case
-    await client.query(
-      'UPDATE cases SET causal_graph = $1, updated_at = NOW() WHERE id = $2',
-      [JSON.stringify(causalGraph), caseId]
-    );
-
-    // 2. Clear and reinsert document requirements
-    await client.query('DELETE FROM document_requirements WHERE case_id = $1', [caseId]);
-    const docReqs = causalGraph.documentRequirements || [];
-    let docReqsSaved = 0;
-    for (const req of docReqs) {
-      if (!req.documentType || !req.agency) continue;
-      await client.query(
-        `INSERT INTO document_requirements
-           (case_id, agency, document_type, reason, related_node_ids, required, source_type, source_institution)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-        [
-          caseId,
-          req.agency,
-          req.documentType,
-          req.reason || '',
-          req.relatedNodeIds || [],
-          req.required !== false,
-          req.sourceType === 'government_request' ? 'government_request' : 'resident',
-          req.sourceInstitution || null
-        ]
-      );
-      docReqsSaved++;
-    }
-
-    // 3. Clear and reinsert letters drafts
-    await client.query("DELETE FROM letters WHERE case_id = $1 AND status = 'draft'", [caseId]);
-    let lettersCreated = 0;
-    for (const letter of letters) {
-      if (!letter.agency || !letter.content) continue;
-      await client.query(
-        `INSERT INTO letters (case_id, agency, agency_label, content, status, generated_by)
-         VALUES ($1, $2, $3, $4, 'draft', NULL)`,
-        [caseId, letter.agency, letter.agencyLabel || null, letter.content]
-      );
-      lettersCreated++;
-    }
-
-    // 4. Record case_events audit log
-    await client.query(
-      `INSERT INTO case_events (case_id, actor_id, actor, actor_role, event_type, action, detail)
-       VALUES ($1, NULL, 'System Worker', 'system', 'causality_run', 'causality_run', $2)`,
-      [
-        caseId,
-        JSON.stringify({
-          lettersCreated,
-          documentRequirementsSaved: docReqsSaved,
-          urgency: causalGraph.urgency?.overall || 'Unknown',
-          trigger: 'async_chat_submit'
-        })
-      ]
-    );
-
-    await client.query('COMMIT');
-    console.log(`[Worker] Async causality processing completed for case ${caseId}`);
-  } catch (err) {
-    await client.query('ROLLBACK');
-    console.error(`[Worker] Database transaction failed for case ${caseId}:`, err.message);
-    throw err;
-  } finally {
-    client.release();
-  }
-}, { connection });
-
-worker.on('failed', (job, err) => {
-  console.error(`[Worker] Job ${job.id} failed:`, err.message);
-});
 
 
 // ── Health ────────────────────────────────────────────────────
