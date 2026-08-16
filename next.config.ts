@@ -7,7 +7,7 @@ const nextConfig: NextConfig = {
 
   // Never expose server env vars to the browser unless explicitly prefixed NEXT_PUBLIC_
   // This is the Next.js equivalent of Vite's import.meta.env guard
-  serverExternalPackages: ['pg', 'ioredis', 'jose'],
+  serverExternalPackages: ['pg', 'ioredis', 'jose', 'bullmq'],
 
   experimental: {
     // Causality engine pipeline takes 30-90s on Ollama.
